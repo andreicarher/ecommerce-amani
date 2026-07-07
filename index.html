@@ -625,11 +625,10 @@ function cellStr(cell) {
 }
 function tableToRows(table) {
   const dataRows = table.rows.map(r => (r.c || []).map(cellStr));
-  // Google a veces "promueve" la fila de encabezados (Mes/Fecha/...) a table.cols
-  // y la saca de table.rows. La reconstruimos al frente por si acaso, para no perderla.
   const headerFromCols = (table.cols || []).map(c => (c && (c.label || c.id)) || '');
-  if (headerFromCols.some(v => v)) return [headerFromCols, ...dataRows];
-  return dataRows;
+  const rows = headerFromCols.some(v => v && !/^[A-Z]{1,2}$/.test(v)) ? [headerFromCols, ...dataRows] : dataRows;
+  rows._colsDebug = table.cols; // guardamos la metadata cruda para diagnóstico
+  return rows;
 }
 
 function toNum(s) {
@@ -660,8 +659,9 @@ function findMesFechaBase(rows) {
 function processResumenRows(rows) {
   const found = findMesFechaBase(rows);
   if (!found) {
-    const preview = rows.slice(0, 6).map(r => r.slice(0, 6).join(' | ')).join('  //  ');
-    throw new Error(`No se encontró "Mes"/"Fecha" en ${rows.length} filas recibidas. Primeras filas: ${preview}`);
+    const preview = rows.slice(0, 8).map((r,i) => `[f${i}] ` + r.slice(0, 10).join(' | ')).join('  //  ');
+    const colsPreview = (rows._colsDebug || []).slice(0, 10).map(c => `(id:${c && c.id},label:${c && c.label},type:${c && c.type})`).join(' ');
+    throw new Error(`No se encontró "Mes"/"Fecha" en ${rows.length} filas. cols=[${colsPreview}] filas=${preview}`);
   }
   const { headerIdx, base } = found;
   const col = (r, k) => r[base + k];
