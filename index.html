@@ -624,11 +624,7 @@ function cellStr(cell) {
   return String(cell.v);
 }
 function tableToRows(table) {
-  const dataRows = table.rows.map(r => (r.c || []).map(cellStr));
-  const headerFromCols = (table.cols || []).map(c => (c && (c.label || c.id)) || '');
-  const rows = headerFromCols.some(v => v && !/^[A-Z]{1,2}$/.test(v)) ? [headerFromCols, ...dataRows] : dataRows;
-  rows._colsDebug = table.cols; // guardamos la metadata cruda para diagnóstico
-  return rows;
+  return table.rows.map(r => (r.c || []).map(cellStr));
 }
 
 function toNum(s) {
@@ -643,67 +639,85 @@ function toNum(s) {
   return neg ? -v : v;
 }
 
-/* ---------- Resumen Mensual: filas -> {daily, monthly} ---------- */
-function findMesFechaBase(rows) {
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i];
-    for (let j = 0; j < r.length - 1; j++) {
-      if (String(r[j]).trim() === 'Mes' && String(r[j+1]).trim() === 'Fecha') {
-        return { headerIdx: i, base: j - 1 }; // base tal que r[base+1]=Mes, r[base+2]=Fecha
-      }
-    }
-  }
-  return null;
-}
+/* ---------- Resumen Mensual: filas -> {daily, monthly} ----------
+   Nota: Google Sheets vía gviz fuerza UN SOLO tipo de dato por columna.
+   Como la columna "Mes" mezcla números (días) con texto (nombres de mes),
+   y "Fecha" mezcla texto tipo fecha con la etiqueta de encabezado, Google
+   descarta silenciosamente cualquier valor que no calce con el tipo que
+   infirió — incluyendo la palabra "Mes"/"Fecha" y los nombres de los meses.
+   Por eso NO buscamos esos textos: detectamos cada fila por su patrón. */
+const FECHA_PATTERN = /^\d{1,2}-[a-z]{3}$/i;
 
 function processResumenRows(rows) {
-  const found = findMesFechaBase(rows);
-  if (!found) {
-    const preview = rows.slice(0, 8).map((r,i) => `[f${i}] ` + r.slice(0, 10).join(' | ')).join('  //  ');
-    const colsPreview = (rows._colsDebug || []).slice(0, 10).map(c => `(id:${c && c.id},label:${c && c.label},type:${c && c.type})`).join(' ');
-    throw new Error(`No se encontró "Mes"/"Fecha" en ${rows.length} filas. cols=[${colsPreview}] filas=${preview}`);
-  }
-  const { headerIdx, base } = found;
-  const col = (r, k) => r[base + k];
-
   const today = new Date();
   today.setHours(0,0,0,0);
 
-  const daily = [];
-  const monthly = [];
-  for (let i = headerIdx + 1; i < rows.length; i++) {
+  // Clasificar cada fila candidata por patrón, sin depender de texto de encabezado
+  const items = [];
+  for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    if (!r || r.length < base + 20) continue;
-    const mes = col(r,1), fecha = col(r,2);
-    if (MONTH_NAME_SET.has(mes) && fecha === '') {
-      monthly.push({
-        mes,
-        inv_pauta: toNum(col(r,3)), roas_prom: toNum(col(r,4)), visitas_web: toNum(col(r,5)),
-        add_to_carts: toNum(col(r,6)), checkouts: toNum(col(r,7)), ventas_plataformas_unidades: toNum(col(r,8)),
-        ventas_totales_plataformas: toNum(col(r,9)), ventas_totales_shopify: toNum(col(r,12)),
-        ventas_netas_shopify: toNum(col(r,13)), pedidos_shopify: toNum(col(r,14)), ticket_promedio: toNum(col(r,15)),
-        clientes_nuevos: toNum(col(r,17)), pct_clientes_nuevos: toNum(col(r,18)), ingresos_clientes_nuevos: toNum(col(r,19)),
-        ticket_promedio_nuevos: toNum(col(r,20)),
-      });
-    } else if (/^\d+$/.test(mes) && fecha) {
-      const [dayStr, monAbr] = String(fecha).split('-');
-      const month = MESES_ABR_JS[monAbr];
-      if (!month) continue;
-      const dt = new Date(2026, month - 1, parseInt(dayStr));
-      if (dt > today) continue; // no incluir días futuros del template
-      daily.push({
-        mes_num: parseInt(mes), mes: MESES_NUM_NAME_JS[month], fecha,
-        date: dt.toISOString().slice(0,10),
-        inv_pauta: toNum(col(r,3)) || 0, roas_prom: toNum(col(r,4)), visitas_web: toNum(col(r,5)) || 0,
-        add_to_carts: toNum(col(r,6)) || 0, checkouts: toNum(col(r,7)) || 0,
-        ventas_plataformas_unidades: toNum(col(r,8)) || 0, ventas_totales_plataformas: toNum(col(r,9)) || 0,
-        ventas_totales_shopify: toNum(col(r,12)) || 0, ventas_netas_shopify: toNum(col(r,13)) || 0,
-        pedidos_shopify: toNum(col(r,14)) || 0, ticket_promedio: toNum(col(r,15)),
-        clientes_nuevos: toNum(col(r,17)) || 0, pct_clientes_nuevos: toNum(col(r,18)),
-        ingresos_clientes_nuevos: toNum(col(r,19)) || 0,
-      });
+    if (!r || r.length < 20) continue;
+    const fecha = String(r[2] ?? '').trim();
+    const invPauta = toNum(r[3]);
+    if (FECHA_PATTERN.test(fecha)) {
+      items.push({ type: 'daily', r, fecha });
+    } else if (fecha === '' && invPauta !== null) {
+      items.push({ type: 'summary', r });
     }
   }
+  if (!items.some(it => it.type === 'daily')) {
+    const preview = rows.slice(0, 8).map((r,i) => `[f${i}] ` + r.slice(0, 10).join(' | ')).join('  //  ');
+    throw new Error(`No se encontraron filas diarias con patrón de fecha (ej. "1-feb") en ${rows.length} filas. Primeras filas: ${preview}`);
+  }
+
+  const daily = [];
+  for (const it of items) {
+    if (it.type !== 'daily') continue;
+    const r = it.r;
+    const [dayStr, monAbr] = it.fecha.split('-');
+    const month = MESES_ABR_JS[monAbr.toLowerCase()];
+    if (!month) continue;
+    const dt = new Date(2026, month - 1, parseInt(dayStr));
+    if (dt > today) continue; // no incluir días futuros del template
+    daily.push({
+      mes_num: month, mes: MESES_NUM_NAME_JS[month], fecha: it.fecha,
+      date: dt.toISOString().slice(0,10),
+      inv_pauta: toNum(r[3]) || 0, roas_prom: toNum(r[4]), visitas_web: toNum(r[5]) || 0,
+      add_to_carts: toNum(r[6]) || 0, checkouts: toNum(r[7]) || 0,
+      ventas_plataformas_unidades: toNum(r[8]) || 0, ventas_totales_plataformas: toNum(r[9]) || 0,
+      ventas_totales_shopify: toNum(r[12]) || 0, ventas_netas_shopify: toNum(r[13]) || 0,
+      pedidos_shopify: toNum(r[14]) || 0, ticket_promedio: toNum(r[15]),
+      clientes_nuevos: toNum(r[17]) || 0, pct_clientes_nuevos: toNum(r[18]),
+      ingresos_clientes_nuevos: toNum(r[19]) || 0,
+    });
+  }
+
+  // Los resúmenes mensuales no traen el nombre del mes en texto (se lo comió gviz);
+  // se lo asignamos mirando la primera fila diaria que le sigue.
+  const monthly = [];
+  for (let idx = 0; idx < items.length; idx++) {
+    if (items[idx].type !== 'summary') continue;
+    const r = items[idx].r;
+    let mesNum = null;
+    for (let j = idx + 1; j < items.length; j++) {
+      if (items[j].type === 'daily') {
+        const [, monAbr] = items[j].fecha.split('-');
+        mesNum = MESES_ABR_JS[monAbr.toLowerCase()];
+        break;
+      }
+    }
+    if (!mesNum) continue;
+    monthly.push({
+      mes: MESES_NUM_NAME_JS[mesNum],
+      inv_pauta: toNum(r[3]), roas_prom: toNum(r[4]), visitas_web: toNum(r[5]),
+      add_to_carts: toNum(r[6]), checkouts: toNum(r[7]), ventas_plataformas_unidades: toNum(r[8]),
+      ventas_totales_plataformas: toNum(r[9]), ventas_totales_shopify: toNum(r[12]),
+      ventas_netas_shopify: toNum(r[13]), pedidos_shopify: toNum(r[14]), ticket_promedio: toNum(r[15]),
+      clientes_nuevos: toNum(r[17]), pct_clientes_nuevos: toNum(r[18]), ingresos_clientes_nuevos: toNum(r[19]),
+      ticket_promedio_nuevos: toNum(r[20]),
+    });
+  }
+
   return { daily, monthly };
 }
 
