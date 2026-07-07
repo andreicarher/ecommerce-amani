@@ -640,12 +640,26 @@ function toNum(s) {
 }
 
 /* ---------- Resumen Mensual: filas -> {daily, monthly} ---------- */
-function processResumenRows(rows) {
-  let headerIdx = -1;
+function findMesFechaBase(rows) {
   for (let i = 0; i < rows.length; i++) {
-    if (rows[i][1] === 'Mes' && rows[i][2] === 'Fecha') { headerIdx = i; break; }
+    const r = rows[i];
+    for (let j = 0; j < r.length - 1; j++) {
+      if (String(r[j]).trim() === 'Mes' && String(r[j+1]).trim() === 'Fecha') {
+        return { headerIdx: i, base: j - 1 }; // base tal que r[base+1]=Mes, r[base+2]=Fecha
+      }
+    }
   }
-  if (headerIdx === -1) throw new Error('No se encontró el encabezado esperado en Resumen Mensual');
+  return null;
+}
+
+function processResumenRows(rows) {
+  const found = findMesFechaBase(rows);
+  if (!found) {
+    const preview = rows.slice(0, 6).map(r => r.slice(0, 6).join(' | ')).join('  //  ');
+    throw new Error(`No se encontró "Mes"/"Fecha" en ${rows.length} filas recibidas. Primeras filas: ${preview}`);
+  }
+  const { headerIdx, base } = found;
+  const col = (r, k) => r[base + k];
 
   const today = new Date();
   today.setHours(0,0,0,0);
@@ -654,20 +668,20 @@ function processResumenRows(rows) {
   const monthly = [];
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const r = rows[i];
-    if (!r || r.length < 20) continue;
-    const mes = r[1], fecha = r[2];
+    if (!r || r.length < base + 20) continue;
+    const mes = col(r,1), fecha = col(r,2);
     if (MONTH_NAME_SET.has(mes) && fecha === '') {
       monthly.push({
         mes,
-        inv_pauta: toNum(r[3]), roas_prom: toNum(r[4]), visitas_web: toNum(r[5]),
-        add_to_carts: toNum(r[6]), checkouts: toNum(r[7]), ventas_plataformas_unidades: toNum(r[8]),
-        ventas_totales_plataformas: toNum(r[9]), ventas_totales_shopify: toNum(r[12]),
-        ventas_netas_shopify: toNum(r[13]), pedidos_shopify: toNum(r[14]), ticket_promedio: toNum(r[15]),
-        clientes_nuevos: toNum(r[17]), pct_clientes_nuevos: toNum(r[18]), ingresos_clientes_nuevos: toNum(r[19]),
-        ticket_promedio_nuevos: toNum(r[20]),
+        inv_pauta: toNum(col(r,3)), roas_prom: toNum(col(r,4)), visitas_web: toNum(col(r,5)),
+        add_to_carts: toNum(col(r,6)), checkouts: toNum(col(r,7)), ventas_plataformas_unidades: toNum(col(r,8)),
+        ventas_totales_plataformas: toNum(col(r,9)), ventas_totales_shopify: toNum(col(r,12)),
+        ventas_netas_shopify: toNum(col(r,13)), pedidos_shopify: toNum(col(r,14)), ticket_promedio: toNum(col(r,15)),
+        clientes_nuevos: toNum(col(r,17)), pct_clientes_nuevos: toNum(col(r,18)), ingresos_clientes_nuevos: toNum(col(r,19)),
+        ticket_promedio_nuevos: toNum(col(r,20)),
       });
     } else if (/^\d+$/.test(mes) && fecha) {
-      const [dayStr, monAbr] = fecha.split('-');
+      const [dayStr, monAbr] = String(fecha).split('-');
       const month = MESES_ABR_JS[monAbr];
       if (!month) continue;
       const dt = new Date(2026, month - 1, parseInt(dayStr));
@@ -675,13 +689,13 @@ function processResumenRows(rows) {
       daily.push({
         mes_num: parseInt(mes), mes: MESES_NUM_NAME_JS[month], fecha,
         date: dt.toISOString().slice(0,10),
-        inv_pauta: toNum(r[3]) || 0, roas_prom: toNum(r[4]), visitas_web: toNum(r[5]) || 0,
-        add_to_carts: toNum(r[6]) || 0, checkouts: toNum(r[7]) || 0,
-        ventas_plataformas_unidades: toNum(r[8]) || 0, ventas_totales_plataformas: toNum(r[9]) || 0,
-        ventas_totales_shopify: toNum(r[12]) || 0, ventas_netas_shopify: toNum(r[13]) || 0,
-        pedidos_shopify: toNum(r[14]) || 0, ticket_promedio: toNum(r[15]),
-        clientes_nuevos: toNum(r[17]) || 0, pct_clientes_nuevos: toNum(r[18]),
-        ingresos_clientes_nuevos: toNum(r[19]) || 0,
+        inv_pauta: toNum(col(r,3)) || 0, roas_prom: toNum(col(r,4)), visitas_web: toNum(col(r,5)) || 0,
+        add_to_carts: toNum(col(r,6)) || 0, checkouts: toNum(col(r,7)) || 0,
+        ventas_plataformas_unidades: toNum(col(r,8)) || 0, ventas_totales_plataformas: toNum(col(r,9)) || 0,
+        ventas_totales_shopify: toNum(col(r,12)) || 0, ventas_netas_shopify: toNum(col(r,13)) || 0,
+        pedidos_shopify: toNum(col(r,14)) || 0, ticket_promedio: toNum(col(r,15)),
+        clientes_nuevos: toNum(col(r,17)) || 0, pct_clientes_nuevos: toNum(col(r,18)),
+        ingresos_clientes_nuevos: toNum(col(r,19)) || 0,
       });
     }
   }
@@ -745,21 +759,28 @@ function classifyObjetivo(campaign) {
 }
 
 function processMetaV2Rows(rows) {
+  let base = 0; // por default, r[k] = columna k
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    const idx = rows[i].findIndex(c => String(c).trim() === 'Campaign name');
+    if (idx !== -1) { base = idx - 3; break; } // originalmente "Campaign name" estaba en el índice 3
+  }
+  const col = (r, k) => r[base + k];
+
   const out = [];
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
-    if (!r || !r[2] || !r[5]) continue;
-    const [dayStr, monAbr] = String(r[2]).split('-');
+    if (!r || !col(r,2) || !col(r,5)) continue;
+    const [dayStr, monAbr] = String(col(r,2)).split('-');
     const month = MESES_ABR_JS[monAbr];
     if (!month || !dayStr) continue;
     const dt = new Date(2026, month - 1, parseInt(dayStr));
     out.push({
       date: dt.toISOString().slice(0,10),
-      campaign: r[3], adset: r[4], ad_name: r[5],
-      reach: toNum(r[6]) || 0, impressions: toNum(r[7]) || 0, cost: toNum(r[9]) || 0,
-      unique_clicks: toNum(r[10]) || 0,
-      lpv: toNum(r[14]) || 0, atc: toNum(r[17]) || 0, atc_value: toNum(r[19]) || 0,
-      checkout_iniciado: toNum(r[20]) || 0, purchases: toNum(r[25]) || 0, purchase_value: toNum(r[27]) || 0,
+      campaign: col(r,3), adset: col(r,4), ad_name: col(r,5),
+      reach: toNum(col(r,6)) || 0, impressions: toNum(col(r,7)) || 0, cost: toNum(col(r,9)) || 0,
+      unique_clicks: toNum(col(r,10)) || 0,
+      lpv: toNum(col(r,14)) || 0, atc: toNum(col(r,17)) || 0, atc_value: toNum(col(r,19)) || 0,
+      checkout_iniciado: toNum(col(r,20)) || 0, purchases: toNum(col(r,25)) || 0, purchase_value: toNum(col(r,27)) || 0,
     });
   }
   return out;
