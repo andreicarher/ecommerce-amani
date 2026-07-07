@@ -624,7 +624,12 @@ function cellStr(cell) {
   return String(cell.v);
 }
 function tableToRows(table) {
-  return table.rows.map(r => (r.c || []).map(cellStr));
+  const dataRows = table.rows.map(r => (r.c || []).map(cellStr));
+  // Google a veces "promueve" la fila de encabezados (Mes/Fecha/...) a table.cols
+  // y la saca de table.rows. La reconstruimos al frente por si acaso, para no perderla.
+  const headerFromCols = (table.cols || []).map(c => (c && (c.label || c.id)) || '');
+  if (headerFromCols.some(v => v)) return [headerFromCols, ...dataRows];
+  return dataRows;
 }
 
 function toNum(s) {
