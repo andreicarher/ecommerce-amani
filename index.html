@@ -602,6 +602,21 @@
       <div class="chart-box" style="height:420px;"><canvas id="regionChart"></canvas></div>
     </div>
 
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Funnel por Estado</div>
+          <div class="panel-sub">LPV, Add to Carts, Inicios de Pago y Compras por región · clic en un encabezado para ordenar</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="regionTable">
+          <thead><tr id="regionTableHead"></tr></thead>
+          <tbody id="regionTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="two-col">
       <div class="panel">
         <div class="panel-head">
@@ -2228,6 +2243,49 @@ function renderRegionChart(){
   });
 }
 
+let regionTableSort = { key:'spend', dir:-1 };
+const REGION_TABLE_COLS = [
+  {key:'region', label:'Estado'},
+  {key:'spend', label:'Inversión', fmt:'money'},
+  {key:'lpv', label:'LPV', fmt:'int'},
+  {key:'atc', label:'Add to Carts', fmt:'int'},
+  {key:'checkout_iniciado', label:'Inicios de Pago', fmt:'int'},
+  {key:'purchases', label:'Compras', fmt:'int'},
+  {key:'purchase_value', label:'Valor Compras', fmt:'money'},
+  {key:'roas', label:'ROAS', fmt:'num1'},
+];
+function fmtRegionTable(v, fmt){
+  if(v===null||v===undefined||isNaN(v)) return '—';
+  if(fmt==='num1') return v.toFixed(2)+'x';
+  return fmtAud(v, fmt);
+}
+function renderRegionTable(){
+  const head = document.getElementById('regionTableHead');
+  head.innerHTML = '';
+  REGION_TABLE_COLS.forEach(c=>{
+    const th = document.createElement('th');
+    th.textContent = c.label + (regionTableSort.key===c.key ? (regionTableSort.dir>0?' ▲':' ▼') : '');
+    th.onclick = ()=>{
+      if(regionTableSort.key===c.key) regionTableSort.dir *= -1; else regionTableSort = { key:c.key, dir: c.key==='region'?1:-1 };
+      renderRegionTable();
+    };
+    head.appendChild(th);
+  });
+  const rows = [...AUDIENCIAS_DATA.region].sort((a,b)=>{
+    const av = a[regionTableSort.key], bv = b[regionTableSort.key];
+    if(typeof av === 'string') return regionTableSort.dir * av.localeCompare(bv);
+    const an = av===null||av===undefined?-Infinity:av, bn = bv===null||bv===undefined?-Infinity:bv;
+    return regionTableSort.dir * (an-bn);
+  });
+  const body = document.getElementById('regionTableBody');
+  body.innerHTML = '';
+  rows.forEach(r=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = REGION_TABLE_COLS.map(c=> c.key==='region' ? `<td>${r.region}</td>` : `<td>${fmtRegionTable(r[c.key], c.fmt)}</td>`).join('');
+    body.appendChild(tr);
+  });
+}
+
 function renderDeviceChart(){
   const d = AUDIENCIAS_DATA.device;
   const ctx = document.getElementById('deviceChart').getContext('2d');
@@ -2303,6 +2361,12 @@ async function fetchLiveAudiencias(timeRange){
   const region = regionRows.map(r=>({
     region: r.region, spend: parseFloat(r.spend)||0, reach: parseInt(r.reach)||0,
     impressions: parseInt(r.impressions)||0, clicks: parseInt(r.clicks)||0,
+    lpv: extractActionValue(r.actions,'omni_landing_page_view'),
+    atc: extractActionValue(r.actions,'omni_add_to_cart'),
+    checkout_iniciado: extractActionValue(r.actions,'omni_initiated_checkout'),
+    purchases: extractActionValue(r.actions,'omni_purchase'),
+    purchase_value: (()=>{ const arr=r.action_values; const f=Array.isArray(arr)?arr.find(a=>a.action_type==='omni_purchase'):null; return f?parseFloat(f.value):0; })(),
+    roas: extractRoas(r),
   })).sort((a,b)=>b.spend-a.spend);
   const device = deviceRows.map(r=>({
     device: DEVICE_LABELS[r.device_platform] || r.device_platform, spend: parseFloat(r.spend)||0,
@@ -2379,6 +2443,7 @@ async function renderAudienciasAll(){
   safe(renderAgeChart, 'ageChart');
   safe(renderGenderChart, 'genderChart');
   safe(renderRegionChart, 'regionChart');
+  safe(renderRegionTable, 'regionTable');
   safe(renderDeviceChart, 'deviceChart');
   safe(renderPlatformChart, 'platformChart');
 }
