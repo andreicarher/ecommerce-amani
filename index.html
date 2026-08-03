@@ -377,7 +377,7 @@
       <div class="panel-head">
         <div>
           <div class="panel-title">Detalle semanal</div>
-          <div class="panel-sub">Semanas de lunes a domingo · Clic en un encabezado para ordenar</div>
+          <div class="panel-sub">Semanas de lunes a domingo · Clic en un encabezado para ordenar · * = semana que cruza dos meses (incluye ambos)</div>
         </div>
       </div>
       <div class="table-wrap">
@@ -740,8 +740,9 @@ function computeWeekly(daily) {
     const monthCounts = {};
     rows.forEach(r => { monthCounts[r.mes_num] = (monthCounts[r.mes_num]||0)+1; });
     const dominant = Object.entries(monthCounts).sort((a,b)=>b[1]-a[1])[0][0];
+    const mesesEnSemana = Object.keys(monthCounts).map(n => MESES_NUM_NAME_JS[n]);
     return {
-      week_start: key, label: `${ws.getDate()} ${ABR[ws.getMonth()]}`, mes: MESES_NUM_NAME_JS[dominant],
+      week_start: key, label: `${ws.getDate()} ${ABR[ws.getMonth()]}`, mes: MESES_NUM_NAME_JS[dominant], meses: mesesEnSemana,
       inv_pauta: sum(rows,'inv_pauta'), roas_prom: avg(rows,'roas_prom'), visitas_web: sum(rows,'visitas_web'),
       add_to_carts: sum(rows,'add_to_carts'), checkouts: sum(rows,'checkouts'),
       ventas_plataformas_unidades: sum(rows,'ventas_plataformas_unidades'), ventas_totales_plataformas: sum(rows,'ventas_totales_plataformas'),
@@ -948,7 +949,7 @@ function getFilteredDaily(){
 function getFilteredWeekly(){
   const weekly = [...AMANI_DATA.weekly].sort((a,b)=> a.week_start.localeCompare(b.week_start));
   if(currentPeriod==='Todo') return weekly;
-  return weekly.filter(w=>w.mes===currentPeriod);
+  return weekly.filter(w=> (w.meses || [w.mes]).includes(currentPeriod));
 }
 function getFilteredMonthly(){
   if(currentPeriod==='Todo') return AMANI_DATA.monthly;
@@ -1223,7 +1224,7 @@ function renderTable(){
     const tr = document.createElement('tr');
     tr.innerHTML = TABLE_COLS.map(c=>{
       if(c.key==='mes') return `<td><span class="month-tag">${r.mes}</span></td>`;
-      if(c.key==='label') return `<td>${r.label}</td>`;
+      if(c.key==='label') return `<td>${r.label}${(r.meses&&r.meses.length>1) ? ' *' : ''}</td>`;
       return `<td>${fmtVal(r[c.key], c.fmt)}</td>`;
     }).join('');
     body.appendChild(tr);
