@@ -5,7 +5,7 @@
 // se expone al cliente.
 
 const AD_ACCOUNT_ID = '1031679542630974';
-const GRAPH_VERSION = 'v21.0';
+const GRAPH_VERSION = 'v26.0';
 
 // Lista blanca de breakdowns permitidos, para no dejar pasar cualquier cosa al query.
 const ALLOWED_BREAKDOWNS = [
