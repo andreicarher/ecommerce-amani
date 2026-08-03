@@ -1,20 +1,23 @@
 // api/meta-creatives.js
 // Trae imágenes de creativos frescas directo de Meta, usando el token del
-// usuario de sistema guardado en el servidor. Se hace en dos pasos porque es
-// más confiable que pedir el campo anidado "creative{...}" en una sola llamada:
-//   1) ad_id -> creative_id
-//   2) creative_id -> thumbnail_url / image_url
-// Así, si un solo ID falla, no tumba el resto del batch.
+// usuario de sistema guardado en el servidor.
+//
+// IMPORTANTE: el parámetro "ids" para pedir varios objetos de un jalón quedó
+// deprecado en v26.0+ de la Graph API ("The ids query parameter is deprecated
+// in v26.0+"). Por eso aquí se pide cada objeto individualmente (en paralelo,
+// no uno por uno) en vez de un solo request por lote.
+//
+//   Paso 1: cada ad_id -> su creative_id      (N requests en paralelo)
+//   Paso 2: cada creative_id -> su imagen      (M requests en paralelo)
 
-const GRAPH_VERSION = 'v21.0';
+const GRAPH_VERSION = 'v26.0';
 
-async function fetchIds(ids, fields, token) {
-  const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/`);
-  url.searchParams.set('ids', ids.join(','));
+async function fetchOne(id, fields, token) {
+  const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${id}`);
   url.searchParams.set('fields', fields);
   url.searchParams.set('access_token', token);
   const r = await fetch(url.toString());
-  const data = await r.json();
+  const data = await r.json().catch(() => ({}));
   return { ok: r.ok, data };
 }
 
@@ -34,7 +37,7 @@ module.exports = async (req, res) => {
     return;
   }
   if (adIds.length > 50) {
-    res.status(400).json({ error: 'Máximo 50 ad_ids por llamada (límite de la Graph API para el parámetro ids).' });
+    res.status(400).json({ error: 'Máximo 50 ad_ids por llamada.' });
     return;
   }
   if (!adIds.every((id) => /^\d+$/.test(id))) {
@@ -43,38 +46,41 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // Paso 1: cada ad -> su creative_id
-    const step1 = await fetchIds(adIds, 'creative', TOKEN);
-    if (!step1.ok || step1.data.error) {
-      res.status(400).json({ error: (step1.data.error && step1.data.error.message) || 'Error consultando ads en Meta.', step: 1, raw: step1.data });
-      return;
-    }
+    // Paso 1: cada ad individualmente -> su creative_id
+    const step1 = await Promise.all(adIds.map((id) => fetchOne(id, 'creative', TOKEN)));
 
+    const firstRealError = step1.find((r) => !r.ok && r.data && r.data.error);
     const adToCreativeId = {};
-    Object.entries(step1.data).forEach(([adId, entry]) => {
-      if (entry && entry.creative && entry.creative.id) adToCreativeId[adId] = entry.creative.id;
+    adIds.forEach((adId, i) => {
+      const r = step1[i];
+      if (r.ok && r.data && r.data.creative && r.data.creative.id) {
+        adToCreativeId[adId] = r.data.creative.id;
+      }
     });
 
     const creativeIds = [...new Set(Object.values(adToCreativeId))];
     if (!creativeIds.length) {
-      res.status(200).json({}); // ningún ad tenía creative asociado — no es un error, solo vacío
+      // Ningún ad tenía creative asociado. Si además el primer error real
+      // existe, lo mandamos para poder diagnosticar (permisos, etc.).
+      if (firstRealError) {
+        res.status(400).json({ error: firstRealError.data.error.message, step: 1 });
+        return;
+      }
+      res.status(200).json({});
       return;
     }
 
-    // Paso 2: cada creative_id -> sus campos de imagen
-    const step2 = await fetchIds(creativeIds, 'thumbnail_url,image_url,body,title', TOKEN);
-    if (!step2.ok || step2.data.error) {
-      res.status(400).json({ error: (step2.data.error && step2.data.error.message) || 'Error consultando creativos en Meta.', step: 2, raw: step2.data });
-      return;
-    }
+    // Paso 2: cada creative individualmente -> sus campos de imagen
+    const step2 = await Promise.all(creativeIds.map((id) => fetchOne(id, 'thumbnail_url,image_url,body,title', TOKEN)));
+    const creativeData = {};
+    creativeIds.forEach((cid, i) => {
+      const r = step2[i];
+      if (r.ok && r.data && !r.data.error) creativeData[cid] = r.data;
+    });
 
-    // Combinar: ad_id -> { creative: {...} }
     const result = {};
     Object.entries(adToCreativeId).forEach(([adId, creativeId]) => {
-      const creativeData = step2.data[creativeId];
-      if (creativeData && !creativeData.error) {
-        result[adId] = { creative: creativeData };
-      }
+      if (creativeData[creativeId]) result[adId] = { creative: creativeData[creativeId] };
     });
 
     res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
