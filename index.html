@@ -806,7 +806,7 @@ function processMetaV2Rows(rows) {
 }
 
 function aggregateTraffic(rawRows) {
-  const MONTH_ORDER = ['Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto'];
+  const MONTH_ORDER = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   const OBJ_ORDER_L = ['Ventas','Tráfico / Awareness','Retargeting','Otros / Orgánico'];
   const byMonthObj = new Map(), byAd = new Map(), byMonthTotal = new Map(), byMonthObjCampaign = new Map();
   const keys = ['cost','reach','impressions','unique_clicks','lpv','atc','atc_value','checkout_iniciado','purchases','purchase_value'];
@@ -892,7 +892,7 @@ const METRICS = [
   {key:'ingresos_clientes_nuevos', label:'Ingresos Clientes Nuevos', fmt:'money', color:'#6FA967'},
 ];
 
-const MONTH_ORDER = ['Febrero','Marzo','Abril','Mayo','Junio','Julio'];
+const MONTH_ORDER = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const OBJ_ORDER = ['Ventas','Tráfico / Awareness','Retargeting','Otros / Orgánico'];
 const OBJ_COLORS = {
   'Ventas':'#B67C4D',
