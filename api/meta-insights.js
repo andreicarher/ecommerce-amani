@@ -1,0 +1,61 @@
+// api/meta-insights.js
+// Función serverless: el navegador le pide datos a ESTA función, y esta función
+// (que corre en el servidor de Vercel, nunca en el navegador) le pega a la Graph
+// API de Meta usando el token guardado como variable de entorno. El token nunca
+// se expone al cliente.
+
+const AD_ACCOUNT_ID = '1031679542630974';
+const GRAPH_VERSION = 'v21.0';
+
+// Lista blanca de breakdowns permitidos, para no dejar pasar cualquier cosa al query.
+const ALLOWED_BREAKDOWNS = [
+  'age', 'gender', 'region', 'country', 'device_platform',
+  'publisher_platform', 'platform_position', 'impression_device',
+];
+
+module.exports = async (req, res) => {
+  const TOKEN = process.env.META_ACCESS_TOKEN;
+
+  if (!TOKEN) {
+    res.status(500).json({ error: 'META_ACCESS_TOKEN no está configurado en las variables de entorno de Vercel.' });
+    return;
+  }
+
+  const breakdownParam = String(req.query.breakdowns || '');
+  const breakdowns = breakdownParam.split(',').map((b) => b.trim()).filter(Boolean);
+
+  for (const b of breakdowns) {
+    if (!ALLOWED_BREAKDOWNS.includes(b)) {
+      res.status(400).json({ error: `Breakdown no permitido: ${b}` });
+      return;
+    }
+  }
+
+  const datePreset = req.query.date_preset || 'maximum';
+  const fields = 'spend,reach,impressions,clicks,actions,action_values,purchase_roas';
+
+  const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/act_${AD_ACCOUNT_ID}/insights`);
+  url.searchParams.set('fields', fields);
+  url.searchParams.set('date_preset', datePreset);
+  url.searchParams.set('level', 'account');
+  url.searchParams.set('limit', '500');
+  if (breakdowns.length) url.searchParams.set('breakdowns', breakdowns.join(','));
+  url.searchParams.set('access_token', TOKEN);
+
+  try {
+    const metaRes = await fetch(url.toString());
+    const data = await metaRes.json();
+
+    if (data.error) {
+      res.status(400).json({ error: data.error.message, code: data.error.code, type: data.error.type });
+      return;
+    }
+
+    // Cachea la respuesta 1 hora en el CDN de Vercel para no golpear la API de
+    // Meta en cada visita al dashboard.
+    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=86400');
+    res.status(200).json(data);
+  } catch (err) {
+    res.status(500).json({ error: 'Error llamando a la Graph API de Meta: ' + err.message });
+  }
+};
