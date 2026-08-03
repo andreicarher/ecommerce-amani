@@ -32,11 +32,23 @@ module.exports = async (req, res) => {
   }
 
   const datePreset = req.query.date_preset || 'maximum';
+  const timeRangeParam = req.query.time_range; // JSON string {"since":"YYYY-MM-DD","until":"YYYY-MM-DD"}
   const fields = 'spend,reach,impressions,clicks,actions,action_values,purchase_roas';
 
   const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/act_${AD_ACCOUNT_ID}/insights`);
   url.searchParams.set('fields', fields);
-  url.searchParams.set('date_preset', datePreset);
+  if (timeRangeParam) {
+    try {
+      const tr = JSON.parse(timeRangeParam);
+      if (!tr.since || !tr.until) throw new Error('time_range necesita since y until');
+      url.searchParams.set('time_range', JSON.stringify(tr));
+    } catch (e) {
+      res.status(400).json({ error: 'time_range inválido: ' + e.message });
+      return;
+    }
+  } else {
+    url.searchParams.set('date_preset', datePreset);
+  }
   url.searchParams.set('level', 'account');
   url.searchParams.set('limit', '500');
   if (breakdowns.length) url.searchParams.set('breakdowns', breakdowns.join(','));
