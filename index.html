@@ -555,7 +555,7 @@
 
     <div class="ads-grid" id="adsGrid"></div>
 
-    <div class="footer-note" style="margin-top:24px;">Fuente: Query_Meta / Query_MetaV2 (Data Slayer), cuenta Meta Ads 1031679542630974, histórico feb–jul 2026. Las imágenes de vista previa se obtuvieron directamente de la cuenta de Meta Ads para los anuncios que siguen activos ahí — 28 de 88 anuncios históricos aún conservan su creativo en la cuenta; los demás muestran solo las métricas. Las imágenes son enlaces firmados de Meta y pueden dejar de cargar después de algunas semanas.</div>
+    <div class="footer-note" style="margin-top:24px;">Fuente: Query_Meta / Query_MetaV2 (Data Slayer) + cuenta Meta Ads activa 1031679542630974. Las imágenes se traen en vivo cada vez que abres esta pestaña, vía un proxy propio (para evitar el bloqueo de hotlink de Meta). 28 de los anuncios históricos siguen teniendo su creativo en la cuenta activa; el resto — incluyendo varios de los mejores históricamente — corrían en una cuenta de Meta anterior que Meta deshabilitó por actividad inusual, y las cuentas deshabilitadas no son consultables por API. Para esos, no hay forma de recuperar la imagen; el enlace a Ads Manager tampoco va a funcionar para ellos.</div>
 
   </div>
 
@@ -1743,7 +1743,7 @@ function renderAdsGrid(){
     card.style.position = 'relative';
 
     const mediaHtml = ad.thumbnail_url
-      ? `<div class="ad-card-media"><img src="${ad.thumbnail_url}" alt="${ad.ad_name}" loading="lazy" onerror="this.parentElement.outerHTML='<a class=\\'ad-card-media placeholder\\' href=\\'https://adsmanager.facebook.com/adsmanager/manage/ads?act=1031679542630974&selected_ad_ids=${ad.meta_ad_id}\\' target=\\'_blank\\' rel=\\'noopener\\' style=\\'text-decoration:underline; cursor:pointer; color:var(--terracotta); font-weight:700;\\'>Ver anuncio en Ads Manager ↗</a>'"></div>`
+      ? `<div class="ad-card-media"><img src="/api/meta-image?url=${encodeURIComponent(ad.thumbnail_url)}" alt="${ad.ad_name}" loading="lazy" onerror="this.parentElement.outerHTML='<a class=\\'ad-card-media placeholder\\' href=\\'https://adsmanager.facebook.com/adsmanager/manage/ads?act=1031679542630974&selected_ad_ids=${ad.meta_ad_id}\\' target=\\'_blank\\' rel=\\'noopener\\' style=\\'text-decoration:underline; cursor:pointer; color:var(--terracotta); font-weight:700;\\'>Ver anuncio en Ads Manager ↗</a>'"></div>`
       : `<div class="ad-card-media placeholder">Creativo ya no disponible en la cuenta de Meta</div>`;
 
     card.innerHTML = `
