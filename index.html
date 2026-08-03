@@ -308,10 +308,10 @@
 
   <div class="main-tabs">
     <button class="main-tab active" data-view="resumen">Resumen General</button>
-    <button class="main-tab" data-view="trafico">Tráfico por Fuente</button>
-    <button class="main-tab" data-view="engagement">Engagement Web</button>
     <button class="main-tab" data-view="ads">Mejores Anuncios</button>
     <button class="main-tab" data-view="audiencias">Audiencias</button>
+    <button class="main-tab" data-view="trafico">Tráfico por Fuente</button>
+    <button class="main-tab" data-view="engagement">Engagement Web</button>
   </div>
 
   <!-- ===================== VISTA: RESUMEN ===================== -->
@@ -527,6 +527,8 @@
   <!-- ===================== VISTA: MEJORES ANUNCIOS ===================== -->
   <div class="view" id="view-ads">
 
+    <div class="period-row" id="periodRowAds"></div>
+
     <div class="sync-box" style="margin-bottom:16px;">
       <div class="sync-status" id="adsImgSyncStatus" style="flex:1;">Imágenes — cargando…</div>
       <button class="sync-btn" id="adsImgSyncBtn" title="Actualizar imágenes">↻ Actualizar imágenes</button>
@@ -559,6 +561,8 @@
 
   <!-- ===================== VISTA: AUDIENCIAS ===================== -->
   <div class="view" id="view-audiencias">
+
+    <div class="period-row" id="periodRowAudiencias"></div>
 
     <div class="sync-box" style="margin-bottom:20px;">
       <div class="sync-status" id="audienciasRange" style="flex:1;">Meta Ads — desglose demográfico y geográfico</div>
@@ -945,6 +949,9 @@ async function fetchLiveData() {
     const snap = snapshotByAd.get(a.ad_name);
     return snap ? { ...a, thumbnail_url: snap.thumbnail_url, meta_ad_id: snap.meta_ad_id, cta: snap.cta } : a;
   });
+
+  window.RAW_AD_ROWS = combinedAdRows;
+  window.SNAPSHOT_BY_AD_NAME = snapshotByAd;
 
   return {
     daily, monthly, weekly, traffic_monthly, traffic_totals_monthly, top_ads: top_ads_enriched, traffic_campaigns,
@@ -1635,6 +1642,46 @@ function renderTrafficAll(){
 let adsObjFilter = 'Todos';
 let adsSortKey = 'purchase_value';
 let adsTopN = 20;
+let adsPeriod = 'Todo';
+
+function getAdRawRows(){
+  return window.RAW_AD_ROWS || QUERY_META_HISTORICAL;
+}
+function getSnapshotByAdName(){
+  return window.SNAPSHOT_BY_AD_NAME || new Map(AMANI_DATA.top_ads.map(a => [a.ad_name, a]));
+}
+function getTopAdsForPeriod(period){
+  const rows = getAdRawRows();
+  const filtered = period==='Todo' ? rows : rows.filter(r => {
+    const dt = new Date(r.date.slice(0,10) + 'T00:00:00');
+    return MESES_NUM_NAME_JS[dt.getMonth()+1] === period;
+  });
+  const { top_ads } = aggregateTraffic(filtered);
+  const snapshotByAd = getSnapshotByAdName();
+  return top_ads.map(a=>{
+    const snap = snapshotByAd.get(a.ad_name);
+    return snap ? { ...a, thumbnail_url: snap.thumbnail_url, meta_ad_id: snap.meta_ad_id, cta: snap.cta } : a;
+  });
+}
+function renderPeriodRowAds(){
+  const row = document.getElementById('periodRowAds');
+  row.innerHTML = '<span class="period-label">Periodo</span>';
+  const rows = getAdRawRows();
+  const mesesPresentes = [...new Set(rows.map(r=>{
+    const dt = new Date(r.date.slice(0,10) + 'T00:00:00');
+    return MESES_NUM_NAME_JS[dt.getMonth()+1];
+  }))];
+  const MONTH_ORDER_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const meses = MONTH_ORDER_FULL.filter(m=>mesesPresentes.includes(m));
+  const periods = ['Todo', ...meses];
+  periods.forEach(p=>{
+    const chip = document.createElement('button');
+    chip.className = 'chip' + (p===adsPeriod?' active':'');
+    chip.textContent = p;
+    chip.onclick = ()=>{ adsPeriod = p; renderAdsGrid(); };
+    row.appendChild(chip);
+  });
+}
 
 const ADS_SORT_OPTIONS = [
   {key:'purchase_value', label:'Valor de Compras'},
@@ -1676,7 +1723,7 @@ function renderAdsSortSelect(){
 }
 
 function renderAdsGrid(){
-  let rows = [...AMANI_DATA.top_ads];
+  let rows = getTopAdsForPeriod(adsPeriod);
   if(adsObjFilter !== 'Todos') rows = rows.filter(a=>a.objetivo===adsObjFilter);
   rows.sort((a,b)=>{
     const av = a[adsSortKey]===null||a[adsSortKey]===undefined ? -Infinity : a[adsSortKey];
@@ -1731,9 +1778,8 @@ function setAdsImgSyncUI(state, label){
 async function fetchFreshCreatives(adIds){
   if(!adIds.length) return {};
   const res = await fetch(`/api/meta-creatives?ad_ids=${adIds.join(',')}`);
-  if(!res.ok) throw new Error('HTTP ' + res.status);
-  const json = await res.json();
-  if(json.error) throw new Error(json.error);
+  const json = await res.json().catch(()=>({}));
+  if(!res.ok || json.error) throw new Error(json.error || ('HTTP ' + res.status));
   return json;
 }
 
@@ -1762,6 +1808,7 @@ async function refreshAdImages(){
 }
 
 function renderAdsAll(){
+  safe(renderPeriodRowAds, 'periodRowAds');
   safe(renderAdsObjFilter, 'adsObjFilter');
   safe(renderAdsSortSelect, 'adsSortSelect');
   safe(renderAdsGrid, 'adsGrid');
@@ -2227,17 +2274,18 @@ function extractRoas(row){
   const found = arr.find(a => a.action_type === 'omni_purchase');
   return found ? parseFloat(found.value) : null;
 }
-async function fetchMetaBreakdown(breakdown){
-  const res = await fetch(`/api/meta-insights?breakdowns=${breakdown}`);
-  if(!res.ok) throw new Error('HTTP ' + res.status);
-  const json = await res.json();
-  if(json.error) throw new Error(json.error);
+async function fetchMetaBreakdown(breakdown, timeRange){
+  const params = new URLSearchParams({ breakdowns: breakdown });
+  if(timeRange) params.set('time_range', JSON.stringify(timeRange));
+  const res = await fetch(`/api/meta-insights?${params.toString()}`);
+  const json = await res.json().catch(()=>({}));
+  if(!res.ok || json.error) throw new Error(json.error || ('HTTP ' + res.status));
   return json.data || [];
 }
-async function fetchLiveAudiencias(){
+async function fetchLiveAudiencias(timeRange){
   const [ageRows, genderRows, regionRows, deviceRows, platformRows] = await Promise.all([
-    fetchMetaBreakdown('age'), fetchMetaBreakdown('gender'), fetchMetaBreakdown('region'),
-    fetchMetaBreakdown('device_platform'), fetchMetaBreakdown('publisher_platform'),
+    fetchMetaBreakdown('age', timeRange), fetchMetaBreakdown('gender', timeRange), fetchMetaBreakdown('region', timeRange),
+    fetchMetaBreakdown('device_platform', timeRange), fetchMetaBreakdown('publisher_platform', timeRange),
   ]);
   const GENDER_LABELS = { female:'Mujeres', male:'Hombres', unknown:'Desconocido' };
   const DEVICE_LABELS = { desktop:'Desktop', mobile_app:'App móvil', mobile_web:'Web móvil', unknown:'Desconocido' };
@@ -2275,10 +2323,44 @@ function setAudienciasSyncUI(state, label){
   el.innerHTML = dot + label;
 }
 
+let audienciasPeriod = 'Todo';
+
+function computeAudienciasTimeRange(period){
+  if(period==='Todo') return null;
+  const ACCOUNT_START = '2026-06-02';
+  const num = MES_NAME_TO_NUM_JS[period];
+  const year = 2026;
+  const monthStart = `${year}-${String(num).padStart(2,'0')}-01`;
+  const lastDay = new Date(year, num, 0).getDate(); // día 0 del mes siguiente = último día de este mes
+  const today = new Date(); today.setHours(0,0,0,0);
+  let monthEnd = new Date(year, num-1, lastDay);
+  if(monthEnd > today) monthEnd = today;
+  const since = monthStart < ACCOUNT_START ? ACCOUNT_START : monthStart;
+  const until = monthEnd.toISOString().slice(0,10);
+  return { since, until };
+}
+
+function renderPeriodRowAudiencias(){
+  const row = document.getElementById('periodRowAudiencias');
+  row.innerHTML = '<span class="period-label">Periodo</span>';
+  // el account solo tiene actividad desde el 2 de junio de 2026
+  const meses = ['Junio','Julio','Agosto'];
+  const periods = ['Todo', ...meses];
+  periods.forEach(p=>{
+    const chip = document.createElement('button');
+    chip.className = 'chip' + (p===audienciasPeriod?' active':'');
+    chip.textContent = p;
+    chip.onclick = ()=>{ audienciasPeriod = p; renderAudienciasAll(); };
+    row.appendChild(chip);
+  });
+}
+
 async function renderAudienciasAll(){
+  safe(renderPeriodRowAudiencias, 'periodRowAudiencias');
   setAudienciasSyncUI('', 'Meta Ads — conectando en vivo…');
   try {
-    const live = await fetchLiveAudiencias();
+    const timeRange = computeAudienciasTimeRange(audienciasPeriod);
+    const live = await fetchLiveAudiencias(timeRange);
     AUDIENCIAS_DATA.age = live.age;
     AUDIENCIAS_DATA.gender = live.gender;
     AUDIENCIAS_DATA.region = live.region;
