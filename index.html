@@ -2097,7 +2097,7 @@ async function fetchMonthlyFromDirectAPIs(mesName, originalRow){
   // recurrente. Si no la tiene, order.customer viene null en todos los
   // pedidos — en vez de sobreescribir con ceros, dejamos lo que ya traía el
   // Sheet para esos 3 campos específicos.
-  const sinAccesoAClientes = s.pedidos_shopify > 0 && s.orders_without_customer_data >= s.pedidos_shopify;
+  const sinAccesoAClientes = s.pedidos_shopify > 0 && (s.orders_without_customer_data / s.pedidos_shopify) >= 0.8;
   const clientesFields = sinAccesoAClientes && originalRow
     ? {
         clientes_nuevos: originalRow.clientes_nuevos,
