@@ -316,6 +316,7 @@
     <button class="main-tab" data-view="catalogo">Shopify Performance</button>
     <button class="main-tab" data-view="ads">Mejores Anuncios</button>
     <button class="main-tab" data-view="audiencias">Audiencias</button>
+    <button class="main-tab" data-view="metaads">Meta Ads</button>
     <button class="main-tab" data-view="trafico">Tráfico por Fuente</button>
     <button class="main-tab" data-view="engagement">Engagement Web</button>
   </div>
@@ -462,13 +463,11 @@
   <!-- ===================== VISTA: TRAFICO POR FUENTE ===================== -->
   <div class="view" id="view-trafico">
 
-    <div class="period-row" id="periodRowTraffic"></div>
-
     <div class="panel">
       <div class="panel-head">
         <div>
           <div class="panel-title">Tráfico por Canal — todas las fuentes (Shopify)</div>
-          <div class="panel-sub">Direct · Social · Search · Email · Unknown · Sesiones mensuales, Nov 2025 – Jun 2026</div>
+          <div class="panel-sub">Direct · Social · Search · Email · Unknown · Sesiones mensuales, Nov 2025 – Ago 2026</div>
         </div>
       </div>
       <div class="chart-box"><canvas id="channelChart"></canvas></div>
@@ -479,6 +478,15 @@
         </table>
       </div>
     </div>
+
+    <div class="footer-note">Esta vista muestra de dónde viene el tráfico real del sitio (Directo, Social, Búsqueda, Email — según lo detecta Shopify Analytics), sin importar si fue pagado u orgánico. Para el desempeño de las campañas de Meta Ads específicamente, ve a la pestaña "Meta Ads". Snapshot manual — actualizado el 4 de agosto de 2026.</div>
+
+  </div>
+
+  <!-- ===================== VISTA: META ADS (objetivo / campañas) ===================== -->
+  <div class="view" id="view-metaads">
+
+    <div class="period-row" id="periodRowTraffic"></div>
 
     <div class="kpi-section-label">Meta Ads — resumen del periodo</div>
     <div class="kpi-grid" id="kpiGridTraffic"></div>
@@ -518,7 +526,7 @@
     <div class="kpi-section-label">Detalle por objetivo — clic para expandir campañas</div>
     <div id="objGroups"></div>
 
-    <div class="footer-note">La única fuente de tráfico pagado registrada en este Sheet es Meta Ads. Los objetivos se infieren del nombre de campaña (SAL = Ventas, AWA = Tráfico/Awareness, RTG = Retargeting). Meta Ads y KPIs generales se leen en vivo del Sheet; el desglose por Canal (Shopify) es un snapshot manual — actualizado manualmente el 4 de agosto de 2026.</div>
+    <div class="footer-note">La única fuente de tráfico pagado registrada es Meta Ads. Los objetivos se infieren del nombre de campaña (SAL = Ventas, AWA = Tráfico/Awareness, RTG = Retargeting). En vivo — Meta Ads + Google Sheet.</div>
 
   </div>
 
@@ -588,7 +596,7 @@
       </div>
     </div>
 
-    <div class="footer-note">Nota: "Sesiones" aquí es tráfico total del sitio (orgánico + pagado + directo). No confundir con "Visitas Web" del Resumen General, que solo mide clics atribuidos a Meta Ads. Esta pestaña es un snapshot manual de Shopify Analytics (no se actualiza en vivo) — snapshot del 4 de agosto de 2026 — súbeme un export nuevo de Shopify Analytics cuando quieras refrescarla.</div>
+    <div class="footer-note">Nota: "Sesiones" aquí es tráfico total del sitio (orgánico + pagado + directo). No confundir con "Visitas Web" del Resumen General, que solo mide clics atribuidos a Meta Ads. Esta pestaña es un snapshot manual de Shopify Analytics (no se actualiza en vivo) — snapshot del 6 de julio de 2026 — súbeme un export nuevo de Shopify Analytics cuando quieras refrescarla.</div>
 
   </div>
 
@@ -1191,7 +1199,8 @@ document.querySelectorAll('.main-tab').forEach(btn=>{
     document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('view-'+btn.dataset.view).classList.add('active');
-    if(btn.dataset.view==='trafico'){ renderTrafficAll(); }
+    if(btn.dataset.view==='trafico'){ renderChannelOnly(); }
+    if(btn.dataset.view==='metaads'){ renderMetaAdsAll(); }
     if(btn.dataset.view==='engagement'){ renderEngagementAll(); }
     if(btn.dataset.view==='ads'){ renderAdsAll(); }
     if(btn.dataset.view==='audiencias'){ renderAudienciasAll(); }
@@ -1538,7 +1547,7 @@ function renderPeriodRowTraffic(){
   if(window._trafficPicker){ window._trafficPicker.refresh(); return; }
   window._trafficPicker = createPeriodPicker('periodRowTraffic', 'all', (range)=>{
     trafficRange = range;
-    renderTrafficAll();
+    renderMetaAdsAll();
   });
   trafficRange = window._trafficPicker.getRange();
 }
@@ -1807,10 +1816,13 @@ function renderObjGroups(){
   });
 }
 
-function renderTrafficAll(){
-  safe(renderPeriodRowTraffic, 'periodRowTraffic');
+function renderChannelOnly(){
   safe(renderChannelChart, 'channelChart');
   safe(renderChannelTable, 'channelTable');
+}
+
+function renderMetaAdsAll(){
+  safe(renderPeriodRowTraffic, 'periodRowTraffic');
   safe(renderKPIsTraffic, 'kpisTraffic');
   safe(renderTrafficStackChart, 'trafficStackChart');
   safe(renderAdsTrafficChart, 'adsTrafficChart');
@@ -2007,7 +2019,8 @@ function showLiveBanner(msg) {
 function renderEverything() {
   renderAll();
   const active = document.querySelector('.main-tab.active')?.dataset.view;
-  if (active === 'trafico') renderTrafficAll();
+  if (active === 'trafico') renderChannelOnly();
+  if (active === 'metaads') renderMetaAdsAll();
   if (active === 'engagement') renderEngagementAll();
   if (active === 'ads') renderAdsAll();
 }
@@ -2233,9 +2246,9 @@ function renderRatesChart(){
     data:{
       labels: rows.map(r=>r.mes.split(' ')[0].slice(0,3)+' '+r.mes.split(' ')[1].slice(2)),
       datasets:[
-        { label:'Conversión', data: rows.map(r=>pctFmt(r.tasa_conversion)), borderColor:'#B67C4D', backgroundColor:'#B67C4D22', tension:.3, pointRadius:3, borderWidth:2 },
-        { label:'Add to Cart', data: rows.map(r=>pctFmt(r.tasa_atc)), borderColor:'#6FA967', backgroundColor:'#6FA96722', tension:.3, pointRadius:3, borderWidth:2 },
-        { label:'Rebote', data: rows.map(r=>pctFmt(r.tasa_rebote)), borderColor:'#566471', backgroundColor:'#56647122', tension:.3, pointRadius:3, borderWidth:2 },
+        { label:'Conversión', data: rows.map(r=>pctFmt(r.tasa_conversion)), borderColor:'#B67C4D', backgroundColor:'#B67C4D22', tension:.3, pointRadius:3, borderWidth:2, yAxisID:'y' },
+        { label:'Add to Cart', data: rows.map(r=>pctFmt(r.tasa_atc)), borderColor:'#6FA967', backgroundColor:'#6FA96722', tension:.3, pointRadius:3, borderWidth:2, yAxisID:'y' },
+        { label:'Rebote', data: rows.map(r=>pctFmt(r.tasa_rebote)), borderColor:'#566471', backgroundColor:'#56647122', tension:.3, pointRadius:3, borderWidth:2, yAxisID:'y1' },
       ]
     },
     options:{
@@ -2247,7 +2260,16 @@ function renderRatesChart(){
       },
       scales:{
         x:{ grid:{display:false}, ticks:{ font:{family:'Inter', size:10, weight:600}, color:'#566471' } },
-        y:{ grid:{color:'rgba(62,72,49,0.08)'}, ticks:{ font:{family:'Inter', size:10}, color:'#566471', callback:(v)=>v+'%' } }
+        y:{
+          position:'left', grid:{color:'rgba(62,72,49,0.08)'},
+          title:{ display:true, text:'Conversión / Add to Cart', font:{family:'Inter', size:10}, color:'#566471' },
+          ticks:{ font:{family:'Inter', size:10}, color:'#566471', callback:(v)=>v.toFixed(1)+'%' }
+        },
+        y1:{
+          position:'right', grid:{display:false}, min:0, max:100,
+          title:{ display:true, text:'Rebote', font:{family:'Inter', size:10}, color:'#566471' },
+          ticks:{ font:{family:'Inter', size:10}, color:'#566471', callback:(v)=>v+'%' }
+        }
       }
     }
   });
