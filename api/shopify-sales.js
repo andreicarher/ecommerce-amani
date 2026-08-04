@@ -144,8 +144,13 @@ module.exports = async (req, res) => {
       const net = parseFloat((order.currentTotalPriceSet && order.currentTotalPriceSet.shopMoney && order.currentTotalPriceSet.shopMoney.amount) || 0);
       grossTotal += gross;
       netTotal += net;
-      if (!order.customer) { ordersWithoutCustomer += 1; }
-      const isNew = order.customer && order.customer.numberOfOrders === 1;
+      // OJO: Shopify puede regresar un objeto "customer" no-nulo pero con el
+      // campo protegido "numberOfOrders" en null cuando la app no tiene
+      // autorizado el acceso a datos protegidos de clientes. Por eso
+      // revisamos el campo específico, no solo si "customer" existe.
+      const hasCustomerData = order.customer && order.customer.numberOfOrders !== null && order.customer.numberOfOrders !== undefined;
+      if (!hasCustomerData) { ordersWithoutCustomer += 1; }
+      const isNew = hasCustomerData && order.customer.numberOfOrders === 1;
       if (isNew) { newCustomers += 1; newCustomersRevenue += net; }
     });
     const summary = {
