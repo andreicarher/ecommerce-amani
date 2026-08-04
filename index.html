@@ -708,23 +708,6 @@
       <div class="chart-box" style="height:420px;"><canvas id="regionChart"></canvas></div>
     </div>
 
-    <div class="panel">
-      <div class="panel-head">
-        <div>
-          <div class="panel-title">Funnel por Estado</div>
-          <div class="panel-sub">LPV, Add to Carts, Inicios de Pago y Compras por región · clic en un encabezado para ordenar</div>
-          <span class="source-badge meta">Meta Ads API · En vivo</span>
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table id="regionTable">
-          <thead><tr id="regionTableHead"></tr></thead>
-          <tbody id="regionTableBody"></tbody>
-        </table>
-      </div>
-      <div class="footer-note" style="text-align:left; margin-top:8px;">N/D = Meta no expone LPV/ATC/Checkout/Compras combinados con desglose geográfico por estado (solo Edad y Género traen ese detalle). Fuente: Meta Ads API — en vivo.</div>
-    </div>
-
     <div class="two-col">
       <div class="panel">
         <div class="panel-head">
@@ -2068,6 +2051,9 @@ async function syncNow() {
     const live = await fetchLiveData();
     AMANI_DATA.daily = live.daily.map(d => ({ ...d, sortKey: d.mes_num*100 + parseInt(d.fecha) }));
     AMANI_DATA.monthly = live.monthly;
+    if(!AMANI_DATA._sheetMonthlyPristine){
+      AMANI_DATA._sheetMonthlyPristine = live.monthly.map(m => ({ ...m }));
+    }
     AMANI_DATA.weekly = live.weekly;
     AMANI_DATA.traffic_monthly = live.traffic_monthly;
     AMANI_DATA.traffic_totals_monthly = live.traffic_totals_monthly;
@@ -2156,7 +2142,8 @@ async function enrichRecentMonthsFromDirectAPIs(){
 
   setSyncUI('', `En vivo · combinando Meta + Shopify para ${targets.join(', ')}…`);
   const results = await Promise.allSettled(targets.map(mes => {
-    const originalRow = AMANI_DATA.monthly.find(m=>m.mes===mes);
+    const pristine = AMANI_DATA._sheetMonthlyPristine || AMANI_DATA.monthly;
+    const originalRow = pristine.find(m=>m.mes===mes);
     return fetchMonthlyFromDirectAPIs(mes, originalRow);
   }));
 
@@ -2562,53 +2549,6 @@ function renderRegionChart(){
   });
 }
 
-let regionTableSort = { key:'spend', dir:-1 };
-const REGION_TABLE_COLS = [
-  {key:'region', label:'Estado'},
-  {key:'spend', label:'Inversión', fmt:'money'},
-  {key:'lpv', label:'LPV', fmt:'int'},
-  {key:'atc', label:'Add to Carts', fmt:'int'},
-  {key:'checkout_iniciado', label:'Inicios de Pago', fmt:'int'},
-  {key:'purchases', label:'Compras', fmt:'int'},
-  {key:'purchase_value', label:'Valor Compras', fmt:'money'},
-  {key:'roas', label:'ROAS', fmt:'num1'},
-];
-function fmtRegionTable(v, fmt){
-  if(v===null||v===undefined||isNaN(v)) return '—';
-  if(fmt==='num1') return v.toFixed(2)+'x';
-  return fmtAud(v, fmt);
-}
-function renderRegionTable(){
-  const head = document.getElementById('regionTableHead');
-  head.innerHTML = '';
-  REGION_TABLE_COLS.forEach(c=>{
-    const th = document.createElement('th');
-    th.textContent = c.label + (regionTableSort.key===c.key ? (regionTableSort.dir>0?' ▲':' ▼') : '');
-    th.onclick = ()=>{
-      if(regionTableSort.key===c.key) regionTableSort.dir *= -1; else regionTableSort = { key:c.key, dir: c.key==='region'?1:-1 };
-      renderRegionTable();
-    };
-    head.appendChild(th);
-  });
-  const rows = [...AUDIENCIAS_DATA.region].sort((a,b)=>{
-    const av = a[regionTableSort.key], bv = b[regionTableSort.key];
-    if(typeof av === 'string') return regionTableSort.dir * av.localeCompare(bv);
-    const an = av===null||av===undefined?-Infinity:av, bn = bv===null||bv===undefined?-Infinity:bv;
-    return regionTableSort.dir * (an-bn);
-  });
-  const body = document.getElementById('regionTableBody');
-  body.innerHTML = '';
-  const ACTION_COLS = new Set(['lpv','atc','checkout_iniciado','purchases','purchase_value','roas']);
-  rows.forEach(r=>{
-    const tr = document.createElement('tr');
-    tr.innerHTML = REGION_TABLE_COLS.map(c=>{
-      if(c.key==='region') return `<td>${r.region}</td>`;
-      if(ACTION_COLS.has(c.key) && !r._accionesDisponibles) return `<td title="Meta no expone este dato combinado con desglose por región">N/D</td>`;
-      return `<td>${fmtRegionTable(r[c.key], c.fmt)}</td>`;
-    }).join('');
-    body.appendChild(tr);
-  });
-}
 
 function renderDeviceChart(){
   const d = AUDIENCIAS_DATA.device;
@@ -2756,7 +2696,6 @@ async function renderAudienciasAll(){
   safe(renderAgeChart, 'ageChart');
   safe(renderGenderChart, 'genderChart');
   safe(renderRegionChart, 'regionChart');
-  safe(renderRegionTable, 'regionTable');
   safe(renderDeviceChart, 'deviceChart');
   safe(renderPlatformChart, 'platformChart');
 }
