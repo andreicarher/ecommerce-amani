@@ -2088,6 +2088,8 @@ async function fetchMonthlyFromDirectAPIs(mesName){
     pct_clientes_nuevos: s.pct_clientes_nuevos,
     ingresos_clientes_nuevos: s.ingresos_clientes_nuevos || 0,
     _fuente: 'live',
+    _ordersWithoutCustomer: s.orders_without_customer_data || 0,
+    _pedidosShopify: s.pedidos_shopify || 0,
   };
 }
 
@@ -2123,6 +2125,20 @@ async function enrichRecentMonthsFromDirectAPIs(){
   } else {
     setSyncUI('ok', `En vivo · sincronizado ${hh}:${mm} · no se pudo combinar Meta+Shopify para meses recientes, usando el Sheet`);
   }
+
+  // Diagnóstico: si Shopify no está devolviendo el objeto "customer" en los pedidos,
+  // Clientes Nuevos queda en 0 para los meses en vivo — avisamos en vez de fallar en silencio.
+  const mesesSinDatosCliente = results
+    .map((r, i) => r.status === 'fulfilled' ? { mes: targets[i], row: r.value } : null)
+    .filter(x => x && x.row._pedidosShopify > 0 && x.row._ordersWithoutCustomer >= x.row._pedidosShopify);
+  if(mesesSinDatosCliente.length){
+    showLiveBanner(
+      `Nota: Shopify no devolvió datos de cliente para los pedidos de ${mesesSinDatosCliente.map(x=>x.mes).join(', ')}, ` +
+      `así que "Clientes Nuevos" quedó en 0 para esos meses — probablemente falte el permiso "read_customers" en tu app de Shopify. ` +
+      `El resto de las métricas de esos meses sí son correctas.`
+    );
+  }
+
   renderEverything();
 }
 
