@@ -308,6 +308,7 @@
 
   <div class="main-tabs">
     <button class="main-tab active" data-view="resumen">Resumen General</button>
+    <button class="main-tab" data-view="catalogo">Shopify Performance</button>
     <button class="main-tab" data-view="ads">Mejores Anuncios</button>
     <button class="main-tab" data-view="audiencias">Audiencias</button>
     <button class="main-tab" data-view="trafico">Tráfico por Fuente</button>
@@ -388,6 +389,68 @@
         </table>
       </div>
     </div>
+
+  </div>
+
+  <!-- ===================== VISTA: SHOPIFY PERFORMANCE ===================== -->
+  <div class="view" id="view-catalogo">
+
+    <div class="period-row" id="periodRowCatalogo"></div>
+
+    <div class="sync-box" style="margin-bottom:20px;">
+      <div class="sync-status" id="catalogoSyncStatus" style="flex:1;">Shopify — conectando en vivo…</div>
+      <button class="sync-btn" id="catalogoSyncBtn" title="Actualizar ahora">↻ Actualizar</button>
+    </div>
+
+    <div class="kpi-grid" id="kpiGridCatalogo" style="margin-bottom:26px;"></div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Ventas por Producto</div>
+          <div class="panel-sub">Top 15 por ingresos · fuente: Shopify en vivo</div>
+        </div>
+      </div>
+      <div class="chart-box" style="height:420px;"><canvas id="productChart"></canvas></div>
+    </div>
+
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Ventas por Categoría</div>
+            <div class="panel-sub">Product Type de Shopify</div>
+          </div>
+        </div>
+        <div class="chart-box"><canvas id="categoryChart"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Ventas por Estado</div>
+            <div class="panel-sub">Según dirección de envío</div>
+          </div>
+        </div>
+        <div class="chart-box"><canvas id="locationChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Detalle por Ciudad</div>
+          <div class="panel-sub">Clic en un encabezado para ordenar</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="locationTable">
+          <thead><tr id="locationTableHead"></tr></thead>
+          <tbody id="locationTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="footer-note" style="margin-top:24px;">Fuente: Shopify Admin API, en vivo cada vez que se abre esta pestaña (custom app propia — no depende de mí para actualizarse). Ingresos = suma del total original de cada línea de producto (antes de descuentos), excluyendo órdenes canceladas.</div>
 
   </div>
 
@@ -1035,10 +1098,12 @@ document.querySelectorAll('.main-tab').forEach(btn=>{
     if(btn.dataset.view==='engagement'){ renderEngagementAll(); }
     if(btn.dataset.view==='ads'){ renderAdsAll(); }
     if(btn.dataset.view==='audiencias'){ renderAudienciasAll(); }
+    if(btn.dataset.view==='catalogo'){ renderCatalogoAll(); }
   };
 });
 document.getElementById('audienciasSyncBtn').addEventListener('click', renderAudienciasAll);
 document.getElementById('adsImgSyncBtn').addEventListener('click', refreshAdImages);
+document.getElementById('catalogoSyncBtn').addEventListener('click', renderCatalogoAll);
 
 /* ---------- DATA HELPERS (Resumen) ---------- */
 function dayKey(mesNum, fecha){ return mesNum*100 + parseInt(fecha); }
@@ -2446,6 +2511,198 @@ async function renderAudienciasAll(){
   safe(renderRegionTable, 'regionTable');
   safe(renderDeviceChart, 'deviceChart');
   safe(renderPlatformChart, 'platformChart');
+}
+
+/* =========================================================
+   VISTA: CATÁLOGO Y ZONAS (Shopify en vivo)
+   ========================================================= */
+let catalogoPeriod = 'Todo';
+let CATALOGO_DATA = { by_product: [], by_category: [], by_location: [], total_orders: 0, total_revenue: 0 };
+let productChartInst, categoryChartInst, locationChartInst;
+
+function setCatalogoSyncUI(state, label){
+  const el = document.getElementById('catalogoSyncStatus');
+  if(!el) return;
+  const dot = state ? `<span class="sync-dot ${state}" style="display:inline-block; margin-right:6px; vertical-align:middle;"></span>` : '';
+  el.innerHTML = dot + label;
+}
+
+function computeCatalogoTimeRange(period){
+  if(period==='Todo') return null;
+  const num = MES_NAME_TO_NUM_JS[period];
+  const year = 2026;
+  const since = `${year}-${String(num).padStart(2,'0')}-01`;
+  const lastDay = new Date(year, num, 0).getDate();
+  const today = new Date(); today.setHours(0,0,0,0);
+  let untilDate = new Date(year, num-1, lastDay);
+  if(untilDate > today) untilDate = today;
+  return { since, until: untilDate.toISOString().slice(0,10) };
+}
+
+function renderPeriodRowCatalogo(){
+  const row = document.getElementById('periodRowCatalogo');
+  row.innerHTML = '<span class="period-label">Periodo</span>';
+  const MONTH_ORDER_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const mesesDisponibles = AMANI_DATA.monthly && AMANI_DATA.monthly.length
+    ? MONTH_ORDER_FULL.filter(m=>AMANI_DATA.monthly.some(x=>x.mes===m))
+    : ['Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto'];
+  const periods = ['Todo', ...mesesDisponibles];
+  periods.forEach(p=>{
+    const chip = document.createElement('button');
+    chip.className = 'chip' + (p===catalogoPeriod?' active':'');
+    chip.textContent = p;
+    chip.onclick = ()=>{ catalogoPeriod = p; renderCatalogoAll(); };
+    row.appendChild(chip);
+  });
+}
+
+async function fetchShopifySales(timeRange){
+  const params = new URLSearchParams();
+  if(timeRange){ params.set('since', timeRange.since); params.set('until', timeRange.until); }
+  const res = await fetch(`/api/shopify-sales?${params.toString()}`);
+  const json = await res.json().catch(()=>({}));
+  if(!res.ok || json.error) throw new Error(json.error || ('HTTP ' + res.status));
+  return json;
+}
+
+function fmtCat(v, fmt){
+  if(v===null||v===undefined||isNaN(v)) return '—';
+  if(fmt==='money') return '$'+Number(v).toLocaleString('en-US',{maximumFractionDigits:0});
+  return Number(v).toLocaleString('en-US',{maximumFractionDigits:0});
+}
+
+function renderKPIsCatalogo(){
+  const grid = document.getElementById('kpiGridCatalogo');
+  grid.innerHTML = '';
+  const d = CATALOGO_DATA;
+  const topProduct = d.by_product[0];
+  const topCategory = d.by_category[0];
+  const topLocation = [...d.by_location].sort((a,b)=>b.revenue-a.revenue)[0];
+  const cards = [
+    {label:'Ventas Totales', val:fmtCat(d.total_revenue,'money')},
+    {label:'Pedidos', val:fmtCat(d.total_orders,'int')},
+    {label:'Producto Líder', val: topProduct ? topProduct.product+' · '+fmtCat(topProduct.revenue,'money') : '—'},
+    {label:'Categoría Líder', val: topCategory ? topCategory.category+' · '+fmtCat(topCategory.revenue,'money') : '—'},
+    {label:'Estado Líder', val: topLocation ? topLocation.state+' · '+fmtCat(topLocation.revenue,'money') : '—'},
+  ];
+  cards.forEach(c=>{
+    const card = document.createElement('div');
+    card.className = 'kpi-card static';
+    card.innerHTML = `<span class="kpi-label">${c.label}</span><div class="kpi-value" style="font-size:19px;">${c.val}</div>`;
+    grid.appendChild(card);
+  });
+}
+
+function renderProductChart(){
+  const d = [...CATALOGO_DATA.by_product].slice(0,15);
+  const ctx = document.getElementById('productChart').getContext('2d');
+  if(productChartInst) productChartInst.destroy();
+  productChartInst = new Chart(ctx, {
+    type:'bar',
+    data:{ labels:d.map(x=>x.product), datasets:[{ label:'Ventas', data:d.map(x=>x.revenue), backgroundColor:'#B67C4D', borderRadius:5 }] },
+    options:{
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=>fmtCat(c.raw,'money') } } },
+      scales:{
+        x:{ grid:{color:'rgba(62,72,49,0.08)'}, ticks:{ font:{family:'Inter', size:10}, color:'#566471', callback:(v)=>fmtCat(v,'money') } },
+        y:{ grid:{display:false}, ticks:{ font:{family:'Inter', size:10}, color:'#566471' } }
+      }
+    }
+  });
+}
+
+function renderCategoryChart(){
+  const d = CATALOGO_DATA.by_category;
+  const ctx = document.getElementById('categoryChart').getContext('2d');
+  if(categoryChartInst) categoryChartInst.destroy();
+  const palette = ['#3E4831','#B67C4D','#6FA967','#566471','#C4A24A','#8A9A5B','#A0522D','#5B7C99'];
+  categoryChartInst = new Chart(ctx, {
+    type:'doughnut',
+    data:{ labels:d.map(x=>x.category), datasets:[{ data:d.map(x=>x.revenue), backgroundColor:palette }] },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ position:'bottom', labels:{ font:{family:'Inter', size:10}, color:'#3E4831', usePointStyle:true, boxWidth:8 } },
+        tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=> c.label+': '+fmtCat(c.raw,'money') } }
+      }
+    }
+  });
+}
+
+function renderLocationChart(){
+  const byState = new Map();
+  CATALOGO_DATA.by_location.forEach(l=>{
+    if(!byState.has(l.state)) byState.set(l.state, 0);
+    byState.set(l.state, byState.get(l.state) + l.revenue);
+  });
+  const d = [...byState.entries()].map(([state,revenue])=>({state,revenue})).sort((a,b)=>b.revenue-a.revenue).slice(0,12);
+  const ctx = document.getElementById('locationChart').getContext('2d');
+  if(locationChartInst) locationChartInst.destroy();
+  locationChartInst = new Chart(ctx, {
+    type:'bar',
+    data:{ labels:d.map(x=>x.state), datasets:[{ label:'Ventas', data:d.map(x=>x.revenue), backgroundColor:'#3E4831', borderRadius:5 }] },
+    options:{
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=>fmtCat(c.raw,'money') } } },
+      scales:{
+        x:{ grid:{color:'rgba(62,72,49,0.08)'}, ticks:{ font:{family:'Inter', size:10}, color:'#566471', callback:(v)=>fmtCat(v,'money') } },
+        y:{ grid:{display:false}, ticks:{ font:{family:'Inter', size:10}, color:'#566471' } }
+      }
+    }
+  });
+}
+
+let locationTableSort = { key:'revenue', dir:-1 };
+const LOCATION_TABLE_COLS = [
+  {key:'state', label:'Estado'}, {key:'city', label:'Ciudad'},
+  {key:'revenue', label:'Ventas', fmt:'money'}, {key:'quantity', label:'Unidades', fmt:'int'}, {key:'orders', label:'Pedidos', fmt:'int'},
+];
+function renderLocationTable(){
+  const head = document.getElementById('locationTableHead');
+  head.innerHTML = '';
+  LOCATION_TABLE_COLS.forEach(c=>{
+    const th = document.createElement('th');
+    th.textContent = c.label + (locationTableSort.key===c.key ? (locationTableSort.dir>0?' ▲':' ▼') : '');
+    th.onclick = ()=>{
+      if(locationTableSort.key===c.key) locationTableSort.dir *= -1; else locationTableSort = { key:c.key, dir: (c.key==='state'||c.key==='city')?1:-1 };
+      renderLocationTable();
+    };
+    head.appendChild(th);
+  });
+  const rows = [...CATALOGO_DATA.by_location].sort((a,b)=>{
+    const av=a[locationTableSort.key], bv=b[locationTableSort.key];
+    if(typeof av==='string') return locationTableSort.dir*av.localeCompare(bv);
+    return locationTableSort.dir*((av||0)-(bv||0));
+  });
+  const body = document.getElementById('locationTableBody');
+  body.innerHTML = '';
+  rows.forEach(r=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = LOCATION_TABLE_COLS.map(c=> (c.key==='state'||c.key==='city') ? `<td>${r[c.key]}</td>` : `<td>${fmtCat(r[c.key], c.fmt)}</td>`).join('');
+    body.appendChild(tr);
+  });
+}
+
+async function renderCatalogoAll(){
+  safe(renderPeriodRowCatalogo, 'periodRowCatalogo');
+  setCatalogoSyncUI('', 'Shopify — conectando en vivo…');
+  try{
+    const timeRange = computeCatalogoTimeRange(catalogoPeriod);
+    const live = await fetchShopifySales(timeRange);
+    CATALOGO_DATA = live;
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
+    const rango = timeRange ? `${timeRange.since} a ${timeRange.until}` : 'histórico completo';
+    setCatalogoSyncUI('ok', `Shopify — En vivo · sincronizado ${hh}:${mm} · ${rango} · ${live.total_orders} pedidos`);
+  } catch(err){
+    console.error('Catálogo live fetch failed:', err);
+    setCatalogoSyncUI('err', `Shopify — sin conexión al endpoint en vivo (${err.message})`);
+  }
+  safe(renderKPIsCatalogo, 'kpisCatalogo');
+  safe(renderProductChart, 'productChart');
+  safe(renderCategoryChart, 'categoryChart');
+  safe(renderLocationChart, 'locationChart');
+  safe(renderLocationTable, 'locationTable');
 }
 </script>
 </body>
