@@ -120,6 +120,11 @@
 
   /* ---------- PERIOD SELECTOR ---------- */
   .period-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:26px; }
+  .period-picker{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .period-picker input[type="date"]{
+    border:1px solid var(--line); background:var(--white); color:var(--dark-green);
+    padding:7px 10px; border-radius:10px; font-size:13px; font-family:var(--font-body);
+  }
   .period-label{
     font-size:11px; text-transform:uppercase; letter-spacing:.12em;
     color:var(--blue); margin-right:6px; font-weight:600;
@@ -1072,11 +1077,103 @@ const CHANNEL_LABELS = {
 const CUSTOMER_TYPE_COLORS = { 'New':'#B67C4D', 'Returning':'#6FA967', 'Sin dato':'#56647155' };
 const CUSTOMER_TYPE_LABELS = { 'New':'Nuevos', 'Returning':'Recurrentes', 'Sin dato':'Sin dato' };
 
-let currentPeriod = 'Todo';
+let currentRange = null; // {since, until, preset, label} — lo inicializa el period picker
 let currentMetric = 'ventas_totales_shopify';
 let sortState = {col:'fecha_sort', dir:1};
-let trafficPeriod = 'Todo';
+let trafficRange = null;
 let openGroups = new Set(['Ventas']);
+
+/* ---------- SELECTOR DE PERIODO (reutilizable en todas las pestañas) ---------- */
+const PERIOD_PRESETS = [
+  {key:'last7', label:'Últimos 7 días'},
+  {key:'last14', label:'Últimos 14 días'},
+  {key:'last30', label:'Últimos 30 días'},
+  {key:'lastMonth', label:'Mes pasado'},
+  {key:'thisMonth', label:'Mes actual'},
+  {key:'all', label:'Todo el histórico'},
+  {key:'custom', label:'Personalizado…'},
+];
+
+function computePeriodRange(preset, customSince, customUntil){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const fmt = (d)=>d.toISOString().slice(0,10);
+  if(preset==='last7'){ const s=new Date(today); s.setDate(s.getDate()-6); return {since:fmt(s), until:fmt(today)}; }
+  if(preset==='last14'){ const s=new Date(today); s.setDate(s.getDate()-13); return {since:fmt(s), until:fmt(today)}; }
+  if(preset==='last30'){ const s=new Date(today); s.setDate(s.getDate()-29); return {since:fmt(s), until:fmt(today)}; }
+  if(preset==='lastMonth'){
+    const firstOfThis = new Date(today.getFullYear(), today.getMonth(), 1);
+    const lastMonthEnd = new Date(firstOfThis.getTime() - 86400000);
+    const lastMonthStart = new Date(lastMonthEnd.getFullYear(), lastMonthEnd.getMonth(), 1);
+    return {since:fmt(lastMonthStart), until:fmt(lastMonthEnd)};
+  }
+  if(preset==='thisMonth'){ const s = new Date(today.getFullYear(), today.getMonth(), 1); return {since:fmt(s), until:fmt(today)}; }
+  if(preset==='custom'){ return {since:customSince, until:customUntil}; }
+  return {since:null, until:null}; // 'all'
+}
+function periodLabel(preset, range){
+  if(preset==='custom') return `${range.since} a ${range.until}`;
+  const found = PERIOD_PRESETS.find(p=>p.key===preset);
+  return found ? found.label : 'Todo el histórico';
+}
+/* Crea un selector de periodo dentro de containerId. onChange(range) se
+   llama con range={since,until,preset,label} cada vez que cambia. */
+function createPeriodPicker(containerId, defaultPreset, onChange){
+  const container = document.getElementById(containerId);
+  if(!container) return null;
+  const state = { preset: defaultPreset, customSince: null, customUntil: null };
+
+  function currentRangeOf(){
+    const r = computePeriodRange(state.preset, state.customSince, state.customUntil);
+    return { ...r, preset: state.preset, label: periodLabel(state.preset, r) };
+  }
+  function render(){
+    container.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'period-picker';
+    const labelEl = document.createElement('span');
+    labelEl.className = 'period-label';
+    labelEl.textContent = 'Periodo';
+    wrap.appendChild(labelEl);
+    const select = document.createElement('select');
+    select.className = 'select-control';
+    PERIOD_PRESETS.forEach(p=>{
+      const opt = document.createElement('option');
+      opt.value = p.key; opt.textContent = p.label;
+      if(p.key===state.preset) opt.selected = true;
+      select.appendChild(opt);
+    });
+    select.onchange = ()=>{
+      state.preset = select.value;
+      render();
+      if(state.preset !== 'custom') onChange(currentRangeOf());
+    };
+    wrap.appendChild(select);
+    if(state.preset === 'custom'){
+      const sinceInput = document.createElement('input');
+      sinceInput.type = 'date'; sinceInput.className = 'select-control';
+      sinceInput.value = state.customSince || '';
+      const untilInput = document.createElement('input');
+      untilInput.type = 'date'; untilInput.className = 'select-control';
+      untilInput.value = state.customUntil || '';
+      const applyBtn = document.createElement('button');
+      applyBtn.className = 'sync-btn'; applyBtn.textContent = 'Aplicar';
+      applyBtn.onclick = ()=>{
+        state.customSince = sinceInput.value;
+        state.customUntil = untilInput.value;
+        if(state.customSince && state.customUntil) onChange(currentRangeOf());
+      };
+      wrap.appendChild(sinceInput);
+      const y = document.createElement('span'); y.textContent = 'a';
+      y.style.color='var(--blue)'; y.style.fontSize='13px';
+      wrap.appendChild(y);
+      wrap.appendChild(untilInput);
+      wrap.appendChild(applyBtn);
+    }
+    container.appendChild(wrap);
+  }
+  render();
+  return { getRange: currentRangeOf, refresh: render };
+}
 
 /* ---------- FORMATTERS ---------- */
 function fmtVal(v, fmt){
@@ -1110,17 +1207,14 @@ function dayKey(mesNum, fecha){ return mesNum*100 + parseInt(fecha); }
 AMANI_DATA.daily.forEach(d=>{ d.sortKey = dayKey(d.mes_num, d.fecha); });
 
 function getFilteredDaily(){
-  if(currentPeriod==='Todo') return AMANI_DATA.daily;
-  return AMANI_DATA.daily.filter(d=>d.mes===currentPeriod);
+  if(!currentRange || !currentRange.since) return AMANI_DATA.daily;
+  return AMANI_DATA.daily.filter(d=> d.date >= currentRange.since && d.date <= currentRange.until);
 }
+function weekEnd(w){ const d = new Date(w.week_start+'T00:00:00'); d.setDate(d.getDate()+6); return d.toISOString().slice(0,10); }
 function getFilteredWeekly(){
   const weekly = [...AMANI_DATA.weekly].sort((a,b)=> a.week_start.localeCompare(b.week_start));
-  if(currentPeriod==='Todo') return weekly;
-  return weekly.filter(w=> (w.meses || [w.mes]).includes(currentPeriod));
-}
-function getFilteredMonthly(){
-  if(currentPeriod==='Todo') return AMANI_DATA.monthly;
-  return AMANI_DATA.monthly.filter(m=>m.mes===currentPeriod);
+  if(!currentRange || !currentRange.since) return weekly;
+  return weekly.filter(w => weekEnd(w) >= currentRange.since && w.week_start <= currentRange.until);
 }
 function sum(arr, key){ return arr.reduce((a,d)=> a + (Number(d[key])||0), 0); }
 function avg(arr, key){
@@ -1129,34 +1223,36 @@ function avg(arr, key){
   return vals.reduce((a,b)=>a+b,0)/vals.length;
 }
 function aggregateFor(key, arr){
-  if(key==='roas_prom' || key==='ticket_promedio' || key==='pct_clientes_nuevos') return avg(arr,key);
+  if(key==='ticket_promedio'){ const netas=sum(arr,'ventas_netas_shopify'); const ped=sum(arr,'pedidos_shopify'); return ped? netas/ped : null; }
+  if(key==='pct_clientes_nuevos'){ const nuevos=sum(arr,'clientes_nuevos'); const ped=sum(arr,'pedidos_shopify'); return ped? nuevos/ped*100 : null; }
+  if(key==='roas_prom') return avg(arr,key);
   return sum(arr,key);
 }
 
 /* ---------- PERIOD SELECTOR (Resumen) ---------- */
 function renderPeriodRow(){
-  const row = document.getElementById('periodRow');
-  row.innerHTML = '<span class="period-label">Periodo</span>';
-  const periods = ['Todo', ...MONTH_ORDER.filter(m=>AMANI_DATA.monthly.some(x=>x.mes===m))];
-  periods.forEach(p=>{
-    const chip = document.createElement('button');
-    chip.className = 'chip' + (p===currentPeriod?' active':'');
-    chip.textContent = p;
-    chip.onclick = ()=>{ currentPeriod = p; renderAll(); };
-    row.appendChild(chip);
+  if(window._resumenPicker){ window._resumenPicker.refresh(); return; }
+  window._resumenPicker = createPeriodPicker('periodRow', 'last30', (range)=>{
+    currentRange = range;
+    renderAll();
   });
+  currentRange = window._resumenPicker.getRange();
 }
 
 /* ---------- KPI GRID (Resumen) ---------- */
 function computeDelta(key){
-  const months = AMANI_DATA.monthly;
-  let idx;
-  if(currentPeriod==='Todo'){ idx = months.length - 1; }
-  else { idx = months.findIndex(m=>m.mes===currentPeriod); }
-  if(idx<=0) return null;
-  const last = months[idx], prev = months[idx-1];
-  const a = last[key], b = prev[key];
-  if(a===null||b===null||b===0||a===undefined||b===undefined) return null;
+  const filteredCurrent = getFilteredDaily();
+  if(!currentRange || !currentRange.since) return null; // "Todo el histórico" no tiene periodo anterior natural
+  const sinceD = new Date(currentRange.since+'T00:00:00');
+  const untilD = new Date(currentRange.until+'T00:00:00');
+  const lengthDays = Math.round((untilD - sinceD)/86400000) + 1;
+  const prevUntil = new Date(sinceD); prevUntil.setDate(prevUntil.getDate()-1);
+  const prevSince = new Date(prevUntil); prevSince.setDate(prevSince.getDate()-(lengthDays-1));
+  const prevSinceStr = prevSince.toISOString().slice(0,10), prevUntilStr = prevUntil.toISOString().slice(0,10);
+  const prevRows = AMANI_DATA.daily.filter(d=> d.date>=prevSinceStr && d.date<=prevUntilStr);
+  const a = aggregateFor(key, filteredCurrent);
+  const b = aggregateFor(key, prevRows);
+  if(a===null||b===null||b===0) return null;
   return ((a-b)/Math.abs(b))*100;
 }
 
@@ -1164,9 +1260,8 @@ function renderKPIs(){
   const grid = document.getElementById('kpiGrid');
   grid.innerHTML = '';
   const daily = getFilteredDaily();
-  const monthRecord = currentPeriod!=='Todo' ? AMANI_DATA.monthly.find(m=>m.mes===currentPeriod) : null;
   METRICS.forEach(m=>{
-    const val = monthRecord ? monthRecord[m.key] : aggregateFor(m.key, daily);
+    const val = aggregateFor(m.key, daily);
     const card = document.createElement('button');
     card.className = 'kpi-card' + (m.key===currentMetric?' active':'');
     let deltaHtml = '';
@@ -1174,7 +1269,7 @@ function renderKPIs(){
     if(delta!==null){
       const cls = delta>0.5?'pos':(delta<-0.5?'neg':'flat');
       const arrow = delta>0.5?'↑':(delta<-0.5?'↓':'→');
-      deltaHtml = `<div class="kpi-delta ${cls}">${arrow} ${Math.abs(delta).toFixed(0)}% vs mes anterior</div>`;
+      deltaHtml = `<div class="kpi-delta ${cls}">${arrow} ${Math.abs(delta).toFixed(0)}% vs periodo anterior</div>`;
     }
     card.innerHTML = `<span class="kpi-label">${m.label}</span><div class="kpi-value">${fmtVal(val, m.fmt)}</div>${deltaHtml}`;
     card.onclick = ()=>{ currentMetric = m.key; renderAll(); };
@@ -1185,11 +1280,21 @@ function renderKPIs(){
 /* ---------- CHARTS (Resumen) ---------- */
 let trendChartInst, monthlyChartInst, newCustomersChartInst, newVsReturningChartInst, trafficStackChartInst, adsTrafficChartInst, adsAtcChartInst, channelChartInst;
 
+function monthOverlapsRange(mesName, range){
+  if(!range || !range.since) return false;
+  const num = MES_NAME_TO_NUM_JS[mesName];
+  if(!num) return false;
+  const monthStart = `2026-${String(num).padStart(2,'0')}-01`;
+  const lastDay = new Date(2026, num, 0).getDate();
+  const monthEnd = `2026-${String(num).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+  return monthEnd >= range.since && monthStart <= range.until;
+}
+
 function renderTrendChart(){
   const weekly = getFilteredWeekly();
   const metric = METRICS.find(m=>m.key===currentMetric);
   document.getElementById('trendTitle').textContent = metric.label + ' — tendencia semanal';
-  document.getElementById('trendSub').textContent = (currentPeriod==='Todo' ? 'Febrero – Julio 2026' : currentPeriod + ' 2026') + ' · semanas de lunes a domingo';
+  document.getElementById('trendSub').textContent = (currentRange ? currentRange.label : 'Todo el histórico') + ' · semanas de lunes a domingo';
 
   const labels = weekly.map(w=>w.label);
   const values = weekly.map(w=>w[currentMetric]);
@@ -1232,7 +1337,7 @@ function renderMonthlyChart(){
     type:'bar',
     data:{ labels: months.map(m=>m.mes.slice(0,3)), datasets:[{
       label: metric.label, data: months.map(m=>m[currentMetric]),
-      backgroundColor: months.map(m=> m.mes===currentPeriod ? '#B67C4D' : '#3E483155'),
+      backgroundColor: months.map(m=> monthOverlapsRange(m.mes, currentRange) ? '#B67C4D' : '#3E483155'),
       borderRadius:6, maxBarThickness:38,
     }] },
     options:{
@@ -1258,7 +1363,7 @@ function renderNewCustomersChart(){
         {
           type:'bar', label:'Clientes Nuevos',
           data: months.map(m=>m.clientes_nuevos),
-          backgroundColor: months.map(m=> m.mes===currentPeriod ? '#B67C4D' : '#6FA967'),
+          backgroundColor: months.map(m=> monthOverlapsRange(m.mes, currentRange) ? '#B67C4D' : '#6FA967'),
           borderRadius:6, maxBarThickness:38, yAxisID:'y',
         },
         {
@@ -1419,26 +1524,23 @@ function renderAll(){
    ========================================================= */
 
 function getTrafficMonthlyFiltered(){
-  if(trafficPeriod==='Todo') return AMANI_DATA.traffic_monthly;
-  return AMANI_DATA.traffic_monthly.filter(t=>t.mes===trafficPeriod);
+  if(!trafficRange || !trafficRange.since) return AMANI_DATA.traffic_monthly;
+  const rows = getAdRawRows().filter(r=>{ const d=r.date.slice(0,10); return d>=trafficRange.since && d<=trafficRange.until; });
+  return aggregateTraffic(rows).traffic_monthly;
 }
 function getTrafficCampaignsFiltered(){
-  if(trafficPeriod==='Todo') return AMANI_DATA.traffic_campaigns;
-  return AMANI_DATA.traffic_campaigns.filter(t=>t.mes===trafficPeriod);
+  if(!trafficRange || !trafficRange.since) return AMANI_DATA.traffic_campaigns;
+  const rows = getAdRawRows().filter(r=>{ const d=r.date.slice(0,10); return d>=trafficRange.since && d<=trafficRange.until; });
+  return aggregateTraffic(rows).traffic_campaigns;
 }
 
 function renderPeriodRowTraffic(){
-  const row = document.getElementById('periodRowTraffic');
-  row.innerHTML = '<span class="period-label">Periodo</span>';
-  const monthsAvail = MONTH_ORDER.filter(m=>AMANI_DATA.traffic_monthly.some(x=>x.mes===m));
-  const periods = ['Todo', ...monthsAvail];
-  periods.forEach(p=>{
-    const chip = document.createElement('button');
-    chip.className = 'chip' + (p===trafficPeriod?' active':'');
-    chip.textContent = p;
-    chip.onclick = ()=>{ trafficPeriod = p; renderTrafficAll(); };
-    row.appendChild(chip);
+  if(window._trafficPicker){ window._trafficPicker.refresh(); return; }
+  window._trafficPicker = createPeriodPicker('periodRowTraffic', 'all', (range)=>{
+    trafficRange = range;
+    renderTrafficAll();
   });
+  trafficRange = window._trafficPicker.getRange();
 }
 
 function trafficTotals(rows){
@@ -1586,7 +1688,7 @@ function renderAdsTrafficChart(){
       datasets:[{
         label:'Landing Page Views',
         data: totals.map(t=>t.lpv),
-        backgroundColor: totals.map(t=> t.mes===trafficPeriod ? '#B67C4D' : '#56647155'),
+        backgroundColor: totals.map(t=> monthOverlapsRange(t.mes, trafficRange) ? '#B67C4D' : '#56647155'),
         borderRadius:6, maxBarThickness:40,
       }]
     },
@@ -1722,7 +1824,7 @@ function renderTrafficAll(){
 let adsObjFilter = 'Todos';
 let adsSortKey = 'purchase_value';
 let adsTopN = 20;
-let adsPeriod = 'Todo';
+let adsRange = null;
 
 function getAdRawRows(){
   return window.RAW_AD_ROWS || QUERY_META_HISTORICAL;
@@ -1730,11 +1832,11 @@ function getAdRawRows(){
 function getSnapshotByAdName(){
   return window.SNAPSHOT_BY_AD_NAME || new Map(AMANI_DATA.top_ads.map(a => [a.ad_name, a]));
 }
-function getTopAdsForPeriod(period){
+function getTopAdsForPeriod(range){
   const rows = getAdRawRows();
-  const filtered = period==='Todo' ? rows : rows.filter(r => {
-    const dt = new Date(r.date.slice(0,10) + 'T00:00:00');
-    return MESES_NUM_NAME_JS[dt.getMonth()+1] === period;
+  const filtered = (!range || !range.since) ? rows : rows.filter(r => {
+    const d = r.date.slice(0,10);
+    return d >= range.since && d <= range.until;
   });
   const { top_ads } = aggregateTraffic(filtered);
   const snapshotByAd = getSnapshotByAdName();
@@ -1744,23 +1846,12 @@ function getTopAdsForPeriod(period){
   });
 }
 function renderPeriodRowAds(){
-  const row = document.getElementById('periodRowAds');
-  row.innerHTML = '<span class="period-label">Periodo</span>';
-  const rows = getAdRawRows();
-  const mesesPresentes = [...new Set(rows.map(r=>{
-    const dt = new Date(r.date.slice(0,10) + 'T00:00:00');
-    return MESES_NUM_NAME_JS[dt.getMonth()+1];
-  }))];
-  const MONTH_ORDER_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  const meses = MONTH_ORDER_FULL.filter(m=>mesesPresentes.includes(m));
-  const periods = ['Todo', ...meses];
-  periods.forEach(p=>{
-    const chip = document.createElement('button');
-    chip.className = 'chip' + (p===adsPeriod?' active':'');
-    chip.textContent = p;
-    chip.onclick = ()=>{ adsPeriod = p; renderAdsGrid(); };
-    row.appendChild(chip);
+  if(window._adsPicker){ window._adsPicker.refresh(); return; }
+  window._adsPicker = createPeriodPicker('periodRowAds', 'all', (range)=>{
+    adsRange = range;
+    renderAdsGrid();
   });
+  adsRange = window._adsPicker.getRange();
 }
 
 const ADS_SORT_OPTIONS = [
@@ -1803,7 +1894,7 @@ function renderAdsSortSelect(){
 }
 
 function renderAdsGrid(){
-  let rows = getTopAdsForPeriod(adsPeriod);
+  let rows = getTopAdsForPeriod(adsRange);
   if(adsObjFilter !== 'Todos') rows = rows.filter(a=>a.objetivo===adsObjFilter);
   rows.sort((a,b)=>{
     const av = a[adsSortKey]===null||a[adsSortKey]===undefined ? -Infinity : a[adsSortKey];
@@ -1941,6 +2032,7 @@ async function syncNow() {
     const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
     setSyncUI('ok', `En vivo · sincronizado ${hh}:${mm}`);
     renderEverything();
+    enrichRecentMonthsFromDirectAPIs(); // no bloqueante — cuando termine, re-renderiza
   } catch (err) {
     console.error('Live sync failed:', err);
     setSyncUI('err', 'Sin conexión al Sheet — mostrando el último snapshot');
@@ -1953,6 +2045,72 @@ async function syncNow() {
   } finally {
     btn.disabled = false;
   }
+}
+
+/* ---------- HÍBRIDO: feb-mayo desde el Sheet, junio en adelante desde Meta+Shopify en vivo ---------- */
+const HYBRID_CUTOVER_YEAR_MONTH = { year: 2026, month: 6 }; // Junio 2026 en adelante
+
+async function fetchMonthlyFromDirectAPIs(mesName){
+  const timeRange = computeCatalogoTimeRange(mesName); // reusa el helper de Shopify Performance
+  const [metaRows, shopify] = await Promise.all([
+    fetchMetaBreakdown('', timeRange),
+    fetchShopifySales(timeRange),
+  ]);
+  const metaRow = metaRows[0] || {};
+  const s = shopify.summary || {};
+  return {
+    mes: mesName,
+    inv_pauta: parseFloat(metaRow.spend) || 0,
+    roas_prom: extractRoas(metaRow),
+    visitas_web: extractActionValue(metaRow.actions, 'omni_landing_page_view'),
+    add_to_carts: extractActionValue(metaRow.actions, 'omni_add_to_cart'),
+    checkouts: extractActionValue(metaRow.actions, 'omni_initiated_checkout'),
+    ventas_plataformas_unidades: extractActionValue(metaRow.actions, 'omni_purchase'),
+    ventas_totales_plataformas: (()=>{ const arr=metaRow.action_values; const f=Array.isArray(arr)?arr.find(a=>a.action_type==='omni_purchase'):null; return f?parseFloat(f.value):0; })(),
+    ventas_totales_shopify: s.ventas_totales_shopify || 0,
+    ventas_netas_shopify: s.ventas_netas_shopify || 0,
+    pedidos_shopify: s.pedidos_shopify || 0,
+    ticket_promedio: s.ticket_promedio,
+    clientes_nuevos: s.clientes_nuevos || 0,
+    pct_clientes_nuevos: s.pct_clientes_nuevos,
+    ingresos_clientes_nuevos: s.ingresos_clientes_nuevos || 0,
+    _fuente: 'live',
+  };
+}
+
+async function enrichRecentMonthsFromDirectAPIs(){
+  const mesesActuales = AMANI_DATA.monthly.map(m=>m.mes);
+  const targets = mesesActuales.filter(mes=>{
+    const num = MES_NAME_TO_NUM_JS[mes];
+    return num >= HYBRID_CUTOVER_YEAR_MONTH.month; // asume mismo año (2026); ajustar si cruza a 2027
+  });
+  if(!targets.length) return;
+
+  setSyncUI('', `En vivo · combinando Meta + Shopify para ${targets.join(', ')}…`);
+  const results = await Promise.allSettled(targets.map(mes => fetchMonthlyFromDirectAPIs(mes)));
+
+  let okCount = 0;
+  results.forEach((r, i) => {
+    const mes = targets[i];
+    if(r.status === 'fulfilled'){
+      const idx = AMANI_DATA.monthly.findIndex(m=>m.mes===mes);
+      if(idx !== -1) AMANI_DATA.monthly[idx] = r.value;
+      okCount++;
+    } else {
+      console.error(`No se pudo combinar ${mes} desde las APIs directas:`, r.reason);
+    }
+  });
+
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
+  if(okCount === targets.length){
+    setSyncUI('ok', `En vivo · sincronizado ${hh}:${mm} · Feb–May del Sheet, ${targets.join('/')} combinando Meta + Shopify en vivo`);
+  } else if(okCount > 0){
+    setSyncUI('ok', `En vivo · sincronizado ${hh}:${mm} · ${okCount}/${targets.length} meses recientes combinados en vivo (revisa consola para el resto)`);
+  } else {
+    setSyncUI('ok', `En vivo · sincronizado ${hh}:${mm} · no se pudo combinar Meta+Shopify para meses recientes, usando el Sheet`);
+  }
+  renderEverything();
 }
 
 document.getElementById('syncBtn').addEventListener('click', syncNow);
@@ -2452,43 +2610,29 @@ function setAudienciasSyncUI(state, label){
   el.innerHTML = dot + label;
 }
 
-let audienciasPeriod = 'Todo';
+let audienciasRange = null;
+const META_ACCOUNT_START = '2026-06-02'; // la cuenta de Meta conectada no tiene datos antes de esta fecha
 
-function computeAudienciasTimeRange(period){
-  if(period==='Todo') return null;
-  const ACCOUNT_START = '2026-06-02';
-  const num = MES_NAME_TO_NUM_JS[period];
-  const year = 2026;
-  const monthStart = `${year}-${String(num).padStart(2,'0')}-01`;
-  const lastDay = new Date(year, num, 0).getDate(); // día 0 del mes siguiente = último día de este mes
-  const today = new Date(); today.setHours(0,0,0,0);
-  let monthEnd = new Date(year, num-1, lastDay);
-  if(monthEnd > today) monthEnd = today;
-  const since = monthStart < ACCOUNT_START ? ACCOUNT_START : monthStart;
-  const until = monthEnd.toISOString().slice(0,10);
-  return { since, until };
+function clampToAccountStart(range){
+  if(!range || !range.since) return range;
+  const since = range.since < META_ACCOUNT_START ? META_ACCOUNT_START : range.since;
+  return { ...range, since };
 }
 
 function renderPeriodRowAudiencias(){
-  const row = document.getElementById('periodRowAudiencias');
-  row.innerHTML = '<span class="period-label">Periodo</span>';
-  // el account solo tiene actividad desde el 2 de junio de 2026
-  const meses = ['Junio','Julio','Agosto'];
-  const periods = ['Todo', ...meses];
-  periods.forEach(p=>{
-    const chip = document.createElement('button');
-    chip.className = 'chip' + (p===audienciasPeriod?' active':'');
-    chip.textContent = p;
-    chip.onclick = ()=>{ audienciasPeriod = p; renderAudienciasAll(); };
-    row.appendChild(chip);
+  if(window._audienciasPicker){ window._audienciasPicker.refresh(); return; }
+  window._audienciasPicker = createPeriodPicker('periodRowAudiencias', 'all', (range)=>{
+    audienciasRange = clampToAccountStart(range);
+    renderAudienciasAll();
   });
+  audienciasRange = clampToAccountStart(window._audienciasPicker.getRange());
 }
 
 async function renderAudienciasAll(){
   safe(renderPeriodRowAudiencias, 'periodRowAudiencias');
   setAudienciasSyncUI('', 'Meta Ads — conectando en vivo…');
   try {
-    const timeRange = computeAudienciasTimeRange(audienciasPeriod);
+    const timeRange = audienciasRange;
     const live = await fetchLiveAudiencias(timeRange);
     AUDIENCIAS_DATA.age = live.age;
     AUDIENCIAS_DATA.gender = live.gender;
@@ -2516,7 +2660,7 @@ async function renderAudienciasAll(){
 /* =========================================================
    VISTA: CATÁLOGO Y ZONAS (Shopify en vivo)
    ========================================================= */
-let catalogoPeriod = 'Todo';
+let catalogoRange = null;
 let CATALOGO_DATA = { by_product: [], by_category: [], by_location: [], total_orders: 0, total_revenue: 0 };
 let productChartInst, categoryChartInst, locationChartInst;
 
@@ -2527,6 +2671,7 @@ function setCatalogoSyncUI(state, label){
   el.innerHTML = dot + label;
 }
 
+// Sigue usándose para el híbrido de Resumen General (mapea nombre de mes -> rango).
 function computeCatalogoTimeRange(period){
   if(period==='Todo') return null;
   const num = MES_NAME_TO_NUM_JS[period];
@@ -2540,20 +2685,12 @@ function computeCatalogoTimeRange(period){
 }
 
 function renderPeriodRowCatalogo(){
-  const row = document.getElementById('periodRowCatalogo');
-  row.innerHTML = '<span class="period-label">Periodo</span>';
-  const MONTH_ORDER_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  const mesesDisponibles = AMANI_DATA.monthly && AMANI_DATA.monthly.length
-    ? MONTH_ORDER_FULL.filter(m=>AMANI_DATA.monthly.some(x=>x.mes===m))
-    : ['Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto'];
-  const periods = ['Todo', ...mesesDisponibles];
-  periods.forEach(p=>{
-    const chip = document.createElement('button');
-    chip.className = 'chip' + (p===catalogoPeriod?' active':'');
-    chip.textContent = p;
-    chip.onclick = ()=>{ catalogoPeriod = p; renderCatalogoAll(); };
-    row.appendChild(chip);
+  if(window._catalogoPicker){ window._catalogoPicker.refresh(); return; }
+  window._catalogoPicker = createPeriodPicker('periodRowCatalogo', 'last30', (range)=>{
+    catalogoRange = range;
+    renderCatalogoAll();
   });
+  catalogoRange = window._catalogoPicker.getRange();
 }
 
 async function fetchShopifySales(timeRange){
@@ -2687,12 +2824,12 @@ async function renderCatalogoAll(){
   safe(renderPeriodRowCatalogo, 'periodRowCatalogo');
   setCatalogoSyncUI('', 'Shopify — conectando en vivo…');
   try{
-    const timeRange = computeCatalogoTimeRange(catalogoPeriod);
+    const timeRange = catalogoRange;
     const live = await fetchShopifySales(timeRange);
     CATALOGO_DATA = live;
     const now = new Date();
     const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
-    const rango = timeRange ? `${timeRange.since} a ${timeRange.until}` : 'histórico completo';
+    const rango = (timeRange && timeRange.since) ? `${timeRange.since} a ${timeRange.until}` : 'histórico completo';
     setCatalogoSyncUI('ok', `Shopify — En vivo · sincronizado ${hh}:${mm} · ${rango} · ${live.total_orders} pedidos`);
   } catch(err){
     console.error('Catálogo live fetch failed:', err);
