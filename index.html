@@ -2092,25 +2092,17 @@ async function fetchMonthlyFromDirectAPIs(mesName, originalRow){
   const metaRow = metaRows[0] || {};
   const s = shopify.summary || {};
 
-  // Shopify necesita aprobación de "datos protegidos de clientes" (además del
-  // scope read_customers) para saber si un pedido es de un cliente nuevo o
-  // recurrente. Si no la tiene, order.customer viene null en todos los
-  // pedidos — en vez de sobreescribir con ceros, dejamos lo que ya traía el
-  // Sheet para esos 3 campos específicos.
-  const sinAccesoAClientes = s.pedidos_shopify > 0 && (s.orders_without_customer_data / s.pedidos_shopify) >= 0.8;
-  const clientesFields = sinAccesoAClientes && originalRow
+  // Clientes Nuevos / % Clientes Nuevos / Ingresos Clientes Nuevos se quedan
+  // siempre del Sheet — Shopify necesita una aprobación extra ("datos
+  // protegidos de clientes") para calcular esto de forma confiable, y no
+  // vale la pena la fragilidad de intentar cruzarlo en vivo para 3 campos.
+  const clientesFields = originalRow
     ? {
         clientes_nuevos: originalRow.clientes_nuevos,
         pct_clientes_nuevos: originalRow.pct_clientes_nuevos,
         ingresos_clientes_nuevos: originalRow.ingresos_clientes_nuevos,
-        _clientesFuente: 'sheet (Shopify no autorizó datos protegidos de clientes)',
       }
-    : {
-        clientes_nuevos: s.clientes_nuevos || 0,
-        pct_clientes_nuevos: s.pct_clientes_nuevos,
-        ingresos_clientes_nuevos: s.ingresos_clientes_nuevos || 0,
-        _clientesFuente: 'live',
-      };
+    : { clientes_nuevos: 0, pct_clientes_nuevos: null, ingresos_clientes_nuevos: 0 };
 
   return {
     mes: mesName,
@@ -2127,8 +2119,6 @@ async function fetchMonthlyFromDirectAPIs(mesName, originalRow){
     ticket_promedio: s.ticket_promedio,
     ...clientesFields,
     _fuente: 'live',
-    _ordersWithoutCustomer: s.orders_without_customer_data || 0,
-    _pedidosShopify: s.pedidos_shopify || 0,
   };
 }
 
@@ -2167,21 +2157,6 @@ async function enrichRecentMonthsFromDirectAPIs(){
     setSyncUI('ok', `En vivo · sincronizado ${hh}:${mm} · ${okCount}/${targets.length} meses recientes combinados en vivo (revisa consola para el resto)`);
   } else {
     setSyncUI('ok', `En vivo · sincronizado ${hh}:${mm} · no se pudo combinar Meta+Shopify para meses recientes, usando el Sheet`);
-  }
-
-  // Diagnóstico: si Shopify no puede devolver el objeto "customer" en los pedidos
-  // (falta autorización de "datos protegidos de clientes", no solo el scope),
-  // avisamos que Clientes Nuevos se quedó con el valor del Sheet para esos meses.
-  const mesesSinDatosCliente = results
-    .map((r, i) => r.status === 'fulfilled' ? { mes: targets[i], row: r.value } : null)
-    .filter(x => x && x.row._clientesFuente && x.row._clientesFuente.startsWith('sheet'));
-  if(mesesSinDatosCliente.length){
-    showLiveBanner(
-      `Nota: Shopify no tiene autorizado el acceso a datos protegidos de clientes (más allá del scope read_customers), ` +
-      `así que "Clientes Nuevos", "% Clientes Nuevos" e "Ingresos Clientes Nuevos" de ${mesesSinDatosCliente.map(x=>x.mes).join(', ')} ` +
-      `se quedaron con el valor del Sheet en vez de romperse en 0. El resto de las métricas de esos meses sí son en vivo. ` +
-      `Para que también esto sea en vivo, solicita el acceso a "Protected customer data" en la configuración de tu app de Shopify.`
-    );
   }
 
   renderEverything();
