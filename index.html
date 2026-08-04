@@ -2557,7 +2557,9 @@ function extractRoas(row){
 }
 async function fetchMetaBreakdown(breakdown, timeRange){
   const params = new URLSearchParams({ breakdowns: breakdown });
-  if(timeRange) params.set('time_range', JSON.stringify(timeRange));
+  if(timeRange && timeRange.since && timeRange.until){
+    params.set('time_range', JSON.stringify({ since: timeRange.since, until: timeRange.until }));
+  }
   const res = await fetch(`/api/meta-insights?${params.toString()}`);
   const json = await res.json().catch(()=>({}));
   if(!res.ok || json.error) throw new Error(json.error || ('HTTP ' + res.status));
