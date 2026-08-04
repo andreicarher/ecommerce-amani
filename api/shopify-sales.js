@@ -138,12 +138,13 @@ module.exports = async (req, res) => {
       .sort((a, b) => b.revenue - a.revenue);
 
     // Resumen tipo "Resumen General" — para el híbrido de esa pestaña.
-    let grossTotal = 0, netTotal = 0, newCustomers = 0, newCustomersRevenue = 0;
+    let grossTotal = 0, netTotal = 0, newCustomers = 0, newCustomersRevenue = 0, ordersWithoutCustomer = 0;
     orders.forEach((order) => {
       const gross = parseFloat((order.totalPriceSet && order.totalPriceSet.shopMoney && order.totalPriceSet.shopMoney.amount) || 0);
       const net = parseFloat((order.currentTotalPriceSet && order.currentTotalPriceSet.shopMoney && order.currentTotalPriceSet.shopMoney.amount) || 0);
       grossTotal += gross;
       netTotal += net;
+      if (!order.customer) { ordersWithoutCustomer += 1; }
       const isNew = order.customer && order.customer.numberOfOrders === 1;
       if (isNew) { newCustomers += 1; newCustomersRevenue += net; }
     });
@@ -155,6 +156,9 @@ module.exports = async (req, res) => {
       clientes_nuevos: newCustomers,
       pct_clientes_nuevos: orders.length ? (newCustomers / orders.length * 100) : null,
       ingresos_clientes_nuevos: newCustomersRevenue,
+      // diagnóstico: si esto es igual (o casi) a pedidos_shopify, probablemente falta el
+      // scope "read_customers" en la app de Shopify, o son puros checkouts de invitado.
+      orders_without_customer_data: ordersWithoutCustomer,
     };
 
     res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
