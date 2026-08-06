@@ -2129,10 +2129,13 @@ function computeFatigueFlag(rows){
   const ctrOf = (arr) => { const imp = s(arr,'impressions'); const clk = s(arr,'unique_clicks'); return imp ? clk/imp*100 : null; };
   const ctr1 = ctrOf(firstHalf), ctr2 = ctrOf(secondHalf);
   const totalImpressions = s(sorted,'impressions'), totalReach = s(sorted,'reach');
-  if(ctr1===null || ctr2===null || totalImpressions < 200) return null; // muestra muy chica para confiar en la tendencia
+  if(ctr1===null || ctr2===null || totalImpressions < 150) return null; // muestra muy chica para confiar en la tendencia
   const frequency = totalReach ? totalImpressions/totalReach : 0;
   const ctrDropPct = ctr1 ? ((ctr1-ctr2)/ctr1*100) : 0;
-  return { frequency, ctr1, ctr2, ctrDropPct, isFatigued: frequency > 2.5 && ctrDropPct > 25 };
+  // Umbrales calibrados contra el histórico real de esta cuenta (no genéricos):
+  // aquí la frecuencia rara vez pasa de ~2.5x incluso en el anuncio más repetido,
+  // así que un umbral de "cuenta grande" nunca se activaría.
+  return { frequency, ctr1, ctr2, ctrDropPct, isFatigued: frequency > 1.3 && ctrDropPct > 25 };
 }
 
 function getTopAdsForPeriod(range){
