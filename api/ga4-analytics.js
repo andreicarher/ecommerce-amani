@@ -61,6 +61,7 @@ module.exports = async (req, res) => {
   const dimensions = req.query.dimensions
     ? String(req.query.dimensions).split(',').map((d) => ({ name: d.trim() }))
     : [];
+  const eventNames = req.query.eventNames ? String(req.query.eventNames).split(',').map((e) => e.trim()) : null;
 
   try {
     const token = await getAccessToken(CLIENT_EMAIL, PRIVATE_KEY);
@@ -71,6 +72,11 @@ module.exports = async (req, res) => {
       dimensions,
       limit: 250,
     };
+    if (eventNames) {
+      body.dimensionFilter = {
+        filter: { fieldName: 'eventName', inListFilter: { values: eventNames } },
+      };
+    }
 
     const gaRes = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${PROPERTY_ID}:runReport`, {
       method: 'POST',
