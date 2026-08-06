@@ -326,7 +326,7 @@
     <button class="main-tab" data-view="ads">Mejores Anuncios</button>
     <button class="main-tab" data-view="audiencias">Audiencias</button>
     <button class="main-tab" data-view="metaads">Meta Ads</button>
-    <button class="main-tab" data-view="trafico">Tráfico por Fuente</button>
+    <button class="main-tab" data-view="trafico">Tráfico Web</button>
     <button class="main-tab" data-view="engagement">Engagement Web</button>
   </div>
 
@@ -506,7 +506,71 @@
       </div>
     </div>
 
-    <div class="footer-note">Esta vista muestra de dónde viene el tráfico real del sitio (Directo, Social, Búsqueda, Email — según lo detecta Shopify Analytics), sin importar si fue pagado u orgánico. Para el desempeño de las campañas de Meta Ads específicamente, ve a la pestaña "Meta Ads". Snapshot manual — actualizado el 4 de agosto de 2026.</div>
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Fuente / Medio de la Sesión</div>
+          <div class="panel-sub">sessionSourceMedium · clic en un encabezado para ordenar</div>
+          <span class="source-badge ga4">Google Analytics 4 · En vivo</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="dimSourceMediumTable">
+          <thead><tr id="dimSourceMediumTableHead"></tr></thead>
+          <tbody id="dimSourceMediumTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Campaña de la Sesión</div>
+          <div class="panel-sub">sessionCampaignName · clic en un encabezado para ordenar</div>
+          <span class="source-badge ga4">Google Analytics 4 · En vivo</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="dimCampaignTable">
+          <thead><tr id="dimCampaignTableHead"></tr></thead>
+          <tbody id="dimCampaignTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Fuente de la Sesión</div>
+          <div class="panel-sub">sessionSource · clic en un encabezado para ordenar</div>
+          <span class="source-badge ga4">Google Analytics 4 · En vivo</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="dimSourceTable">
+          <thead><tr id="dimSourceTableHead"></tr></thead>
+          <tbody id="dimSourceTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Contenido de la Sesión</div>
+          <div class="panel-sub">sessionManualAdContent (utm_content) · clic en un encabezado para ordenar</div>
+          <span class="source-badge ga4">Google Analytics 4 · En vivo</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="dimContentTable">
+          <thead><tr id="dimContentTableHead"></tr></thead>
+          <tbody id="dimContentTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="footer-note">Todo en vivo — Google Analytics 4 Data API. Métricas de cada tabla: Visitantes, Sesiones, Tasa de Conversión, Tasa de Add to Cart, Tasa de Rebote, Duración Media, Checkouts Iniciados y Completados — mismas definiciones que en Engagement Web. Para el desempeño de campañas de Meta Ads específicamente, ve a la pestaña "Meta Ads".</div>
 
   </div>
 
@@ -611,8 +675,8 @@
       <div class="panel">
         <div class="panel-head">
           <div>
-            <div class="panel-title">Funnel de Checkout</div>
-            <div class="panel-sub">Sesiones → Checkout iniciado → Checkout completado</div>
+            <div class="panel-title">Customer Journey</div>
+            <div class="panel-sub">Sesión → Vio un Producto → Agregó al Carrito → Inició Checkout → Compró</div>
           <span class="source-badge ga4">Google Analytics 4 · En vivo</span>
           </div>
         </div>
@@ -1733,11 +1797,74 @@ function renderChannelTable(){
   });
 }
 
+const TRAFFIC_DIM_COLS = [
+  {key:'dim', label:'Valor'},
+  {key:'visitantes', label:'Visitantes', fmt:'int'},
+  {key:'sesiones', label:'Sesiones', fmt:'int'},
+  {key:'tasa_conversion', label:'Tasa Conv.', fmt:'pct2'},
+  {key:'tasa_atc', label:'Tasa ATC', fmt:'pct2'},
+  {key:'tasa_rebote', label:'Tasa Rebote', fmt:'pct'},
+  {key:'duracion_media', label:'Dur. Media (s)', fmt:'int'},
+  {key:'checkout_iniciado', label:'Checkout Ini.', fmt:'int'},
+  {key:'checkout_completado', label:'Checkout Comp.', fmt:'int'},
+];
+const TRAFFIC_DIM_SORT = {};
+const TRAFFIC_DIM_ROWS = {};
+
+async function fetchDimensionBreakdown(dimensionName, range){
+  const since = (range && range.since) || GA4_HISTORY_START;
+  const until = (range && range.until) || new Date().toISOString().slice(0,10);
+  const json = await fetchGA4(GA4_ENGAGEMENT_METRICS, [dimensionName], since, until);
+  const rows = ga4RowsToObjects(json);
+  return rows.map(r=> ({ dim: r[dimensionName] || '(not set)', ...shapeEngagementRow(r) }))
+    .sort((a,b)=> b.sesiones - a.sesiones).slice(0, 50);
+}
+
+function renderDimensionTable(tableId){
+  const rows = TRAFFIC_DIM_ROWS[tableId] || [];
+  const sortState = TRAFFIC_DIM_SORT[tableId] || { key:'sesiones', dir:-1 };
+  const head = document.getElementById(tableId+'Head');
+  head.innerHTML = '';
+  TRAFFIC_DIM_COLS.forEach(c=>{
+    const th = document.createElement('th');
+    th.textContent = c.label + (sortState.key===c.key ? (sortState.dir>0?' ▲':' ▼') : '');
+    th.onclick = ()=>{
+      if(sortState.key===c.key) sortState.dir *= -1; else { sortState.key=c.key; sortState.dir = c.key==='dim'?1:-1; }
+      TRAFFIC_DIM_SORT[tableId] = { ...sortState };
+      renderDimensionTable(tableId);
+    };
+    head.appendChild(th);
+  });
+  const sorted = [...rows].sort((a,b)=>{
+    const av=a[sortState.key], bv=b[sortState.key];
+    if(typeof av==='string') return sortState.dir*av.localeCompare(bv);
+    return sortState.dir*((av||0)-(bv||0));
+  });
+  const body = document.getElementById(tableId+'Body');
+  body.innerHTML = '';
+  sorted.forEach(r=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = TRAFFIC_DIM_COLS.map(c=> c.key==='dim' ? `<td>${r.dim}</td>` : `<td>${fmtEngagement(r[c.key], c.fmt)}</td>`).join('');
+    body.appendChild(tr);
+  });
+}
+
 async function renderChannelOnly(){
   safe(renderPeriodRowChannel, 'periodRowChannel');
   setChannelSyncUI('', 'Google Analytics 4 — conectando en vivo…');
   try{
-    CHANNEL_DATA = await fetchLiveChannelData(channelRange);
+    const [channelData, srcMedium, campaign, source, content] = await Promise.all([
+      fetchLiveChannelData(channelRange),
+      fetchDimensionBreakdown('sessionSourceMedium', channelRange),
+      fetchDimensionBreakdown('sessionCampaignName', channelRange),
+      fetchDimensionBreakdown('sessionSource', channelRange),
+      fetchDimensionBreakdown('sessionManualAdContent', channelRange),
+    ]);
+    CHANNEL_DATA = channelData;
+    TRAFFIC_DIM_ROWS.dimSourceMediumTable = srcMedium;
+    TRAFFIC_DIM_ROWS.dimCampaignTable = campaign;
+    TRAFFIC_DIM_ROWS.dimSourceTable = source;
+    TRAFFIC_DIM_ROWS.dimContentTable = content;
     const now = new Date();
     const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
     const rango = (channelRange && channelRange.since) ? channelRange.label : 'Todo el histórico';
@@ -1749,6 +1876,10 @@ async function renderChannelOnly(){
   }
   safe(renderChannelChart, 'channelChart');
   safe(renderChannelTable, 'channelTable');
+  safe(()=>renderDimensionTable('dimSourceMediumTable'), 'dimSourceMediumTable');
+  safe(()=>renderDimensionTable('dimCampaignTable'), 'dimCampaignTable');
+  safe(()=>renderDimensionTable('dimSourceTable'), 'dimSourceTable');
+  safe(()=>renderDimensionTable('dimContentTable'), 'dimContentTable');
 }
 
 function renderAdsTrafficChart(){
@@ -2341,9 +2472,9 @@ function renderRatesChart(){
     data:{
       labels: rows.map(r=>r.mes.split(' ')[0].slice(0,3)+' '+r.mes.split(' ')[1].slice(2)),
       datasets:[
-        { label:'Conversión', data: rows.map(r=>pctFmt(r.tasa_conversion)), borderColor:'#B67C4D', backgroundColor:'#B67C4D22', tension:.3, pointRadius:3, borderWidth:2, yAxisID:'y' },
-        { label:'Add to Cart', data: rows.map(r=>pctFmt(r.tasa_atc)), borderColor:'#6FA967', backgroundColor:'#6FA96722', tension:.3, pointRadius:3, borderWidth:2, yAxisID:'y' },
-        { label:'Rebote', data: rows.map(r=>pctFmt(r.tasa_rebote)), borderColor:'#566471', backgroundColor:'#56647122', tension:.3, pointRadius:3, borderWidth:2, yAxisID:'y1' },
+        { label:'Conversión', data: rows.map(r=>pctFmt(r.tasa_conversion)), borderColor:'#B67C4D', backgroundColor:'#B67C4D22', cubicInterpolationMode:'monotone', pointRadius:3, borderWidth:2, yAxisID:'y' },
+        { label:'Add to Cart', data: rows.map(r=>pctFmt(r.tasa_atc)), borderColor:'#6FA967', backgroundColor:'#6FA96722', cubicInterpolationMode:'monotone', pointRadius:3, borderWidth:2, yAxisID:'y' },
+        { label:'Rebote', data: rows.map(r=>pctFmt(r.tasa_rebote)), borderColor:'#566471', backgroundColor:'#56647122', cubicInterpolationMode:'monotone', pointRadius:3, borderWidth:2, yAxisID:'y1' },
       ]
     },
     options:{
@@ -2370,26 +2501,47 @@ function renderRatesChart(){
   });
 }
 
+const JOURNEY_EVENTS = ['view_item','add_to_cart','begin_checkout','purchase'];
+async function fetchCustomerJourney(range){
+  const since = (range && range.since) || GA4_HISTORY_START;
+  const until = (range && range.until) || new Date().toISOString().slice(0,10);
+  const json = await fetchGA4(['eventCount'], ['eventName'], since, until, JOURNEY_EVENTS);
+  const rows = ga4RowsToObjects(json);
+  const byEvent = {};
+  rows.forEach(r=>{ byEvent[r.eventName] = r.eventCount || 0; });
+  return {
+    view_item: byEvent['view_item'] || 0,
+    add_to_cart: byEvent['add_to_cart'] || 0,
+    begin_checkout: byEvent['begin_checkout'] || 0,
+    purchase: byEvent['purchase'] || 0,
+  };
+}
+
 function renderCheckoutFunnel(){
   const c = ENGAGEMENT_KPIS.current || {};
-  const sesiones = c.sesiones||0, ini = c.checkout_iniciado||0, comp = c.checkout_completado||0;
+  const j = ENGAGEMENT_KPIS.journey || {};
+  const sesiones = c.sesiones||0;
   const steps = [
-    {label:'Sesiones', val:sesiones, color:'#566471'},
-    {label:'Checkout Iniciado', val:ini, color:'#B67C4D'},
-    {label:'Checkout Completado', val:comp, color:'#3E4831'},
+    {label:'Sesiones', val:sesiones, color:'#8A9BA8'},
+    {label:'Vieron un Producto', val:j.view_item||0, color:'#566471'},
+    {label:'Agregaron al Carrito', val:j.add_to_cart||0, color:'#B67C4D'},
+    {label:'Iniciaron Checkout', val:j.begin_checkout||0, color:'#6FA967'},
+    {label:'Compraron', val:j.purchase||0, color:'#3E4831'},
   ];
   const max = Math.max(1, ...steps.map(s=>s.val));
   const box = document.getElementById('checkoutFunnelBox');
   box.innerHTML = '';
-  steps.forEach(s=>{
-    const pct = sesiones>0 ? (s.val/sesiones*100) : 0;
+  steps.forEach((s,i)=>{
+    const pctDeSesiones = sesiones>0 ? (s.val/sesiones*100) : 0;
+    const prevVal = i>0 ? steps[i-1].val : null;
+    const pctDelPaso = (i>0 && prevVal) ? (s.val/prevVal*100) : null;
     const width = Math.max(4, (s.val/max*100));
     const row = document.createElement('div');
     row.className = 'funnel-row';
     row.innerHTML = `
       <div class="funnel-label">${s.label}</div>
       <div class="funnel-bar-bg"><div class="funnel-bar" style="width:${width}%; background:${s.color};">${fmtVal(s.val,'int')}</div></div>
-      <div class="funnel-pct">${pct.toFixed(2)}%</div>`;
+      <div class="funnel-pct">${pctDeSesiones.toFixed(2)}%${pctDelPaso!==null ? ` <span style="opacity:.6; font-size:11px;">(${pctDelPaso.toFixed(1)}% del paso anterior)</span>` : ''}</div>`;
     box.appendChild(row);
   });
 }
@@ -2442,7 +2594,7 @@ function renderCrossRefChart(){
       datasets:[
         { type:'bar', label:'Sesiones Totales', data: rows.map(r=>r.sesiones), backgroundColor:'#3E483188', borderRadius:6, maxBarThickness:34, yAxisID:'y' },
         { type:'bar', label:'Sesiones vía Meta Ads (LPV)', data: rows.map(r=>r.meta_lpv), backgroundColor:'#6FA967', borderRadius:6, maxBarThickness:34, yAxisID:'y' },
-        { type:'line', label:'% Atribuible a Meta', data: rows.map(r=>r.pct_atribuible_meta), borderColor:'#B0503A', borderWidth:2, pointRadius:3, tension:.3, yAxisID:'y1' }
+        { type:'line', label:'% Atribuible a Meta', data: rows.map(r=>r.pct_atribuible_meta), borderColor:'#B0503A', borderWidth:2, pointRadius:3, cubicInterpolationMode:'monotone', clip:false, yAxisID:'y1' }
       ]
     },
     options:{
@@ -2467,7 +2619,7 @@ async function renderEngagementAll(){
   try{
     const range = engagementRange;
     let previous = {};
-    const promises = [fetchEngagementAggregate(range), fetchEngagementMonthly()];
+    const promises = [fetchEngagementAggregate(range), fetchEngagementMonthly(), fetchCustomerJourney(range)];
     if(range && range.since){
       const sinceD = new Date(range.since+'T00:00:00'), untilD = new Date(range.until+'T00:00:00');
       const lengthDays = Math.round((untilD-sinceD)/86400000)+1;
@@ -2475,11 +2627,11 @@ async function renderEngagementAll(){
       const prevSince = new Date(prevUntil); prevSince.setDate(prevSince.getDate()-(lengthDays-1));
       promises.push(fetchEngagementAggregate({ since: prevSince.toISOString().slice(0,10), until: prevUntil.toISOString().slice(0,10) }));
     }
-    const [current, monthly, prevResult] = await Promise.all(promises);
+    const [current, monthly, journey, prevResult] = await Promise.all(promises);
     ENGAGEMENT_MONTHLY = monthly;
     const delta = {};
     if(prevResult){ Object.keys(current).forEach(k=>{ delta[k] = computeEngagementDelta(current, prevResult, k); }); }
-    ENGAGEMENT_KPIS = { current, previous: prevResult||{}, delta };
+    ENGAGEMENT_KPIS = { current, previous: prevResult||{}, delta, journey };
 
     const now = new Date();
     const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
@@ -2488,7 +2640,7 @@ async function renderEngagementAll(){
   } catch(err){
     console.error('Engagement live fetch failed:', err);
     setEngagementSyncUI('err', `Google Analytics 4 — sin conexión al endpoint en vivo (${err.message})`);
-    ENGAGEMENT_KPIS = { current: {}, delta: {} };
+    ENGAGEMENT_KPIS = { current: {}, delta: {}, journey: {} };
     ENGAGEMENT_MONTHLY = [];
   }
   safe(renderKPIsEngagement, 'kpisEngagement');
@@ -2790,10 +2942,11 @@ function renderPeriodRowCatalogo(){
 
 const GA4_HISTORY_START = '2025-01-01'; // fecha de referencia para "Todo el histórico" en GA4
 
-async function fetchGA4(metrics, dimensions, since, until){
+async function fetchGA4(metrics, dimensions, since, until, eventNames){
   const params = new URLSearchParams();
   params.set('metrics', metrics.join(','));
   if(dimensions && dimensions.length) params.set('dimensions', dimensions.join(','));
+  if(eventNames && eventNames.length) params.set('eventNames', eventNames.join(','));
   params.set('since', since || GA4_HISTORY_START);
   params.set('until', until || new Date().toISOString().slice(0,10));
   const res = await fetch(`/api/ga4-analytics?${params.toString()}`);
