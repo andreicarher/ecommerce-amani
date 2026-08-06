@@ -274,6 +274,16 @@
     width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center;
     z-index:2;
   }
+  .ad-card-fatiga{
+    background:#FFF0EC; color:#B0503A; font-size:11.5px; font-weight:700;
+    padding:7px 12px; border-bottom:1px solid #F0D4CB; cursor:default;
+  }
+  .insight-row{
+    display:flex; align-items:flex-start; gap:10px; padding:10px 0;
+    border-bottom:1px solid var(--line); font-size:13px; color:var(--dark-green); line-height:1.4;
+  }
+  .insight-row:last-child{ border-bottom:none; }
+  .insight-icon{ flex-shrink:0; font-size:14px; line-height:1.4; }
   .ad-card-media{
     position:relative; width:100%; aspect-ratio:1/1; background:var(--cream-dim);
     display:flex; align-items:center; justify-content:center; overflow:hidden;
@@ -334,6 +344,16 @@
   <div class="view active" id="view-resumen">
 
     <div class="period-row" id="periodRow"></div>
+
+    <div class="panel" id="insightsPanel" style="display:none; margin-bottom:26px;">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Insights automáticos</div>
+          <div class="panel-sub">Reglas simples sobre el periodo seleccionado vs el periodo anterior</div>
+        </div>
+      </div>
+      <div id="insightsList"></div>
+    </div>
 
     <div class="kpi-section-label">KPIs — clic en una tarjeta para verla en la gráfica de tendencia</div>
     <div class="kpi-grid" id="kpiGrid"></div>
@@ -1016,6 +1036,7 @@ function computeWeekly(daily) {
       pedidos_shopify: sum(rows,'pedidos_shopify'), ticket_promedio: avg(rows,'ticket_promedio'),
       clientes_nuevos: sum(rows,'clientes_nuevos'), pct_clientes_nuevos: avg(rows,'pct_clientes_nuevos'),
       ingresos_clientes_nuevos: sum(rows,'ingresos_clientes_nuevos'), n_days: rows.length,
+      cac_blended: (()=>{ const inv=sum(rows,'inv_pauta'); const n=sum(rows,'clientes_nuevos'); return n? inv/n : null; })(),
     };
   });
   return weekly;
@@ -1160,6 +1181,7 @@ const METRICS = [
   {key:'clientes_nuevos', label:'Clientes Nuevos', fmt:'int', color:'#3E4831'},
   {key:'pct_clientes_nuevos', label:'% Clientes Nuevos', fmt:'pct', color:'#B67C4D'},
   {key:'ingresos_clientes_nuevos', label:'Ingresos Clientes Nuevos', fmt:'money', color:'#6FA967'},
+  {key:'cac_blended', label:'CAC Blended', fmt:'money', color:'#B0503A'},
 ];
 
 const MONTH_ORDER = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -1337,6 +1359,7 @@ function avg(arr, key){
 function aggregateFor(key, arr){
   if(key==='ticket_promedio'){ const netas=sum(arr,'ventas_netas_shopify'); const ped=sum(arr,'pedidos_shopify'); return ped? netas/ped : null; }
   if(key==='pct_clientes_nuevos'){ const nuevos=sum(arr,'clientes_nuevos'); const ped=sum(arr,'pedidos_shopify'); return ped? nuevos/ped*100 : null; }
+  if(key==='cac_blended'){ const inv=sum(arr,'inv_pauta'); const nuevos=sum(arr,'clientes_nuevos'); return nuevos? inv/nuevos : null; }
   if(key==='roas_prom') return avg(arr,key);
   return sum(arr,key);
 }
@@ -1620,8 +1643,69 @@ function renderTable(){
 function safe(fn, label){
   try{ fn(); } catch(e){ console.error('Error rendering ' + label + ':', e); }
 }
+function computeInsights(){
+  if(!currentRange || !currentRange.since) return []; // "Todo el histórico" no tiene periodo anterior comparable
+  const current = getFilteredDaily();
+  const sinceD = new Date(currentRange.since+'T00:00:00'), untilD = new Date(currentRange.until+'T00:00:00');
+  const lengthDays = Math.round((untilD-sinceD)/86400000)+1;
+  const prevUntil = new Date(sinceD); prevUntil.setDate(prevUntil.getDate()-1);
+  const prevSince = new Date(prevUntil); prevSince.setDate(prevSince.getDate()-(lengthDays-1));
+  const prevSinceStr = prevSince.toISOString().slice(0,10), prevUntilStr = prevUntil.toISOString().slice(0,10);
+  const previous = AMANI_DATA.daily.filter(d=> d.date>=prevSinceStr && d.date<=prevUntilStr);
+  if(!current.length || !previous.length) return [];
+
+  const insights = [];
+  const pctChange = (a,b) => (a===null||a===undefined||b===null||b===undefined||b===0) ? null : ((a-b)/Math.abs(b))*100;
+
+  const roasC = aggregateFor('roas_prom', current), roasP = aggregateFor('roas_prom', previous);
+  const roasDelta = pctChange(roasC, roasP);
+  if(roasDelta !== null && roasDelta <= -15){
+    insights.push({icon:'🔴', text:`El ROAS blended cayó ${Math.abs(roasDelta).toFixed(0)}% vs el periodo anterior (${roasP.toFixed(1)}x → ${roasC.toFixed(1)}x) — revisa antes de seguir escalando presupuesto.`});
+  } else if(roasDelta !== null && roasDelta >= 15){
+    insights.push({icon:'🟢', text:`El ROAS blended subió ${roasDelta.toFixed(0)}% vs el periodo anterior (${roasP.toFixed(1)}x → ${roasC.toFixed(1)}x) — buen momento para escalar presupuesto.`});
+  }
+
+  const cacC = aggregateFor('cac_blended', current), cacP = aggregateFor('cac_blended', previous);
+  const cacDelta = pctChange(cacC, cacP);
+  if(cacDelta !== null && cacDelta >= 20){
+    insights.push({icon:'🔴', text:`El CAC Blended subió ${cacDelta.toFixed(0)}% vs el periodo anterior (${fmtVal(cacP,'money')} → ${fmtVal(cacC,'money')}) — cada cliente nuevo te está costando más caro.`});
+  }
+
+  const invC = aggregateFor('inv_pauta', current), invP = aggregateFor('inv_pauta', previous);
+  const ventasC = aggregateFor('ventas_netas_shopify', current), ventasP = aggregateFor('ventas_netas_shopify', previous);
+  const invDelta = pctChange(invC, invP), ventasDelta = pctChange(ventasC, ventasP);
+  if(invDelta !== null && ventasDelta !== null && invDelta > 10 && ventasDelta < 5){
+    insights.push({icon:'🟡', text:`Subiste la inversión ${invDelta.toFixed(0)}% pero las ventas netas casi no crecieron (${ventasDelta.toFixed(0)}%) — el gasto extra no se está traduciendo en ventas todavía.`});
+  }
+
+  const pctNuevosC = aggregateFor('pct_clientes_nuevos', current);
+  if(pctNuevosC !== null && pctNuevosC >= 70){
+    insights.push({icon:'🟡', text:`${pctNuevosC.toFixed(0)}% de tus ingresos vienen de clientes nuevos este periodo — dependencia alta de adquisición, vale la pena invertir en retención.`});
+  }
+
+  const checkoutsC = aggregateFor('checkouts', current), pedidosC = aggregateFor('pedidos_shopify', current);
+  const checkoutsP = aggregateFor('checkouts', previous), pedidosP = aggregateFor('pedidos_shopify', previous);
+  const complC = checkoutsC ? pedidosC/checkoutsC*100 : null, complP = checkoutsP ? pedidosP/checkoutsP*100 : null;
+  const complDelta = pctChange(complC, complP);
+  if(complDelta !== null && complDelta <= -20){
+    insights.push({icon:'🔴', text:`La tasa de finalización de checkout (pedidos ÷ checkouts iniciados de Meta) cayó ${Math.abs(complDelta).toFixed(0)}% vs el periodo anterior.`});
+  }
+
+  return insights;
+}
+
+function renderInsights(){
+  const panel = document.getElementById('insightsPanel');
+  const list = document.getElementById('insightsList');
+  const insights = computeInsights();
+  if(!insights.length){ panel.style.display = 'none'; return; }
+  panel.style.display = '';
+  list.innerHTML = insights.map(i => `<div class="insight-row"><span class="insight-icon">${i.icon}</span><span>${i.text}</span></div>`).join('');
+}
+
 function renderAll(){
   safe(renderPeriodRow, 'periodRow');
+  safe(renderInsights, 'insightsPanel');
   safe(renderKPIs, 'kpis');
   safe(renderTrendChart, 'trendChart');
   safe(renderNewCustomersChart, 'newCustomersChart');
@@ -2035,6 +2119,22 @@ function getAdRawRows(){
 function getSnapshotByAdName(){
   return window.SNAPSHOT_BY_AD_NAME || new Map(AMANI_DATA.top_ads.map(a => [a.ad_name, a]));
 }
+function computeFatigueFlag(rows){
+  // rows: filas diarias de UN anuncio, ya recortadas al periodo seleccionado
+  if(rows.length < 4) return null; // muy pocos días para partir en dos mitades de forma confiable
+  const sorted = [...rows].sort((a,b)=> a.date.localeCompare(b.date));
+  const mid = Math.floor(sorted.length/2);
+  const firstHalf = sorted.slice(0, mid), secondHalf = sorted.slice(mid);
+  const s = (arr,k) => arr.reduce((a,x)=>a+(x[k]||0),0);
+  const ctrOf = (arr) => { const imp = s(arr,'impressions'); const clk = s(arr,'unique_clicks'); return imp ? clk/imp*100 : null; };
+  const ctr1 = ctrOf(firstHalf), ctr2 = ctrOf(secondHalf);
+  const totalImpressions = s(sorted,'impressions'), totalReach = s(sorted,'reach');
+  if(ctr1===null || ctr2===null || totalImpressions < 200) return null; // muestra muy chica para confiar en la tendencia
+  const frequency = totalReach ? totalImpressions/totalReach : 0;
+  const ctrDropPct = ctr1 ? ((ctr1-ctr2)/ctr1*100) : 0;
+  return { frequency, ctr1, ctr2, ctrDropPct, isFatigued: frequency > 2.5 && ctrDropPct > 25 };
+}
+
 function getTopAdsForPeriod(range){
   const rows = getAdRawRows();
   const filtered = (!range || !range.since) ? rows : rows.filter(r => {
@@ -2043,9 +2143,12 @@ function getTopAdsForPeriod(range){
   });
   const { top_ads } = aggregateTraffic(filtered);
   const snapshotByAd = getSnapshotByAdName();
+  const rowsByAd = new Map();
+  filtered.forEach(r=>{ if(!rowsByAd.has(r.ad_name)) rowsByAd.set(r.ad_name, []); rowsByAd.get(r.ad_name).push(r); });
   return top_ads.map(a=>{
     const snap = snapshotByAd.get(a.ad_name);
-    return snap ? { ...a, thumbnail_url: snap.thumbnail_url, meta_ad_id: snap.meta_ad_id, cta: snap.cta } : a;
+    const fatiga = computeFatigueFlag(rowsByAd.get(a.ad_name) || []);
+    return { ...(snap ? { ...a, thumbnail_url: snap.thumbnail_url, meta_ad_id: snap.meta_ad_id, cta: snap.cta } : a), _fatiga: fatiga };
   });
 }
 function renderPeriodRowAds(){
@@ -2120,9 +2223,14 @@ function renderAdsGrid(){
       ? `<div class="ad-card-media"><img src="/api/meta-image?url=${encodeURIComponent(ad.thumbnail_url)}" alt="${ad.ad_name}" loading="lazy" onerror="this.parentElement.outerHTML='<a class=\\'ad-card-media placeholder\\' href=\\'https://adsmanager.facebook.com/adsmanager/manage/ads?act=1031679542630974&selected_ad_ids=${ad.meta_ad_id}\\' target=\\'_blank\\' rel=\\'noopener\\' style=\\'text-decoration:underline; cursor:pointer; color:var(--terracotta); font-weight:700;\\'>Ver anuncio en Ads Manager ↗</a>'"></div>`
       : `<div class="ad-card-media placeholder">Creativo ya no disponible en la cuenta de Meta</div>`;
 
+    const fatigaBadge = (ad._fatiga && ad._fatiga.isFatigued)
+      ? `<div class="ad-card-fatiga" title="Frecuencia ${ad._fatiga.frequency.toFixed(1)}x · CTR bajó de ${ad._fatiga.ctr1.toFixed(2)}% a ${ad._fatiga.ctr2.toFixed(2)}% (-${ad._fatiga.ctrDropPct.toFixed(0)}%) en la segunda mitad del periodo">🔴 Posible fatiga — refresca el creativo</div>`
+      : '';
+
     card.innerHTML = `
       <div class="ad-card-rank">${i+1}</div>
       ${mediaHtml}
+      ${fatigaBadge}
       <div class="ad-card-body">
         <div class="ad-card-name">${ad.ad_name}</div>
         <div class="ad-card-obj"><span class="obj-swatch" style="background:${OBJ_COLORS[ad.objetivo]||'#3E4831'}"></span>${ad.objetivo}</div>
