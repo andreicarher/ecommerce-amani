@@ -128,6 +128,7 @@
   .source-badge.meta{ background:rgba(182,124,77,0.18); color:#8A5730; }
   .source-badge.shopify{ background:rgba(86,100,113,0.15); color:var(--blue); }
   .source-badge.manual{ background:rgba(196,162,74,0.2); color:#8A6D1F; }
+  .source-badge.ga4{ background:rgba(196,120,60,0.18); color:#A04A1F; }
   .period-picker{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .period-picker input[type="date"]{
     border:1px solid var(--line); background:var(--white); color:var(--dark-green);
@@ -481,12 +482,19 @@
   <!-- ===================== VISTA: TRAFICO POR FUENTE ===================== -->
   <div class="view" id="view-trafico">
 
+    <div class="period-row" id="periodRowChannel"></div>
+
+    <div class="sync-box" style="margin-bottom:16px;">
+      <div class="sync-status" id="channelSyncStatus" style="flex:1;">Google Analytics 4 — conectando en vivo…</div>
+      <button class="sync-btn" id="channelSyncBtn" title="Actualizar ahora">↻ Actualizar</button>
+    </div>
+
     <div class="panel">
       <div class="panel-head">
         <div>
-          <div class="panel-title">Tráfico por Canal — todas las fuentes (Shopify)</div>
-          <div class="panel-sub">Direct · Social · Search · Email · Unknown · Sesiones mensuales, Nov 2025 – Ago 2026</div>
-          <span class="source-badge manual">Shopify Analytics · Snapshot manual</span>
+          <div class="panel-title">Tráfico por Canal — todas las fuentes</div>
+          <div class="panel-sub">Direct · Social · Search · Email · Otros</div>
+          <span class="source-badge ga4">Google Analytics 4 · En vivo</span>
         </div>
       </div>
       <div class="chart-box"><canvas id="channelChart"></canvas></div>
@@ -557,7 +565,12 @@
 
     <div class="period-row" id="periodRowEngagement"></div>
 
-    <div class="kpi-section-label">Sesiones totales del sitio (Shopify Analytics) — todo el tráfico, no solo Meta Ads</div>
+    <div class="sync-box" style="margin-bottom:16px;">
+      <div class="sync-status" id="engagementSyncStatus" style="flex:1;">Google Analytics 4 — conectando en vivo…</div>
+      <button class="sync-btn" id="engagementSyncBtn" title="Actualizar ahora">↻ Actualizar</button>
+    </div>
+
+    <div class="kpi-section-label">Sesiones totales del sitio (Google Analytics 4) — todo el tráfico, no solo Meta Ads</div>
     <div class="kpi-grid" id="kpiGridEngagement"></div>
 
     <div class="panel">
@@ -565,7 +578,7 @@
         <div>
           <div class="panel-title">Visitantes y Sesiones — evolución mensual</div>
           <div class="panel-sub">Ago 2025 – Jul 2026</div>
-          <span class="source-badge manual">Shopify Analytics · Snapshot manual</span>
+          <span class="source-badge ga4">Google Analytics 4 · En vivo</span>
         </div>
       </div>
       <div class="chart-box"><canvas id="sessionsChart"></canvas></div>
@@ -576,7 +589,7 @@
         <div>
           <div class="panel-title">Sesiones Totales vs Tráfico Atribuible a Meta Ads</div>
           <div class="panel-sub">Barras: sesiones totales del sitio · Línea: % de esas sesiones que vienen de Meta Ads (Landing Page Views)</div>
-          <span class="source-badge manual">Shopify Analytics (snapshot) + Meta Ads (cruce manual)</span>
+          <span class="source-badge ga4">Google Analytics 4 + Meta Ads · En vivo</span>
         </div>
       </div>
       <div class="chart-box"><canvas id="crossRefChart"></canvas></div>
@@ -589,7 +602,7 @@
           <div>
             <div class="panel-title">Tasas de Conversión, ATC y Rebote</div>
             <div class="panel-sub">% mensual sobre el total de sesiones</div>
-          <span class="source-badge manual">Shopify Analytics · Snapshot manual</span>
+          <span class="source-badge ga4">Google Analytics 4 · En vivo</span>
           </div>
         </div>
         <div class="chart-box small"><canvas id="ratesChart"></canvas></div>
@@ -600,7 +613,7 @@
           <div>
             <div class="panel-title">Funnel de Checkout</div>
             <div class="panel-sub">Sesiones → Checkout iniciado → Checkout completado</div>
-          <span class="source-badge manual">Shopify Analytics · Snapshot manual</span>
+          <span class="source-badge ga4">Google Analytics 4 · En vivo</span>
           </div>
         </div>
         <div class="funnel" id="checkoutFunnelBox"></div>
@@ -611,8 +624,8 @@
       <div class="panel-head">
         <div>
           <div class="panel-title">Detalle mensual</div>
-          <div class="panel-sub">Fuente: Shopify Analytics (Interacción Web + Sesiones a lo largo del tiempo)</div>
-          <span class="source-badge manual">Shopify Analytics · Snapshot manual</span>
+          <div class="panel-sub">Fuente: Google Analytics 4, desglose por mes</div>
+          <span class="source-badge ga4">Google Analytics 4 · En vivo</span>
         </div>
       </div>
       <div class="table-wrap">
@@ -623,7 +636,7 @@
       </div>
     </div>
 
-    <div class="footer-note">Nota: "Sesiones" aquí es tráfico total del sitio (orgánico + pagado + directo). No confundir con "Visitas Web" del Resumen General, que solo mide clics atribuidos a Meta Ads. Esta pestaña es un snapshot manual de Shopify Analytics (no se actualiza en vivo) — snapshot del 6 de julio de 2026 — súbeme un export nuevo de Shopify Analytics cuando quieras refrescarla.</div>
+    <div class="footer-note">Nota: "Sesiones" aquí es tráfico total del sitio (orgánico + pagado + directo). No confundir con "Visitas Web" del Resumen General, que solo mide clics atribuidos a Meta Ads. En vivo — Google Analytics 4 Data API.</div>
 
   </div>
 
@@ -1093,11 +1106,18 @@ const OBJ_COLORS = {
   'Retargeting':'#6FA967',
   'Otros / Orgánico':'#3E483188',
 };
+const GA4_CHANNEL_MAP = {
+  'Direct':'direct',
+  'Organic Search':'search', 'Paid Search':'search', 'Organic Shopping':'search', 'Paid Shopping':'search',
+  'Organic Social':'social', 'Paid Social':'social',
+  'Email':'email',
+};
+function mapGA4Channel(name){ return GA4_CHANNEL_MAP[name] || 'unknown'; }
 const CHANNEL_COLORS = {
   direct:'#3E4831', social:'#B67C4D', search:'#6FA967', email:'#566471', unknown:'#3E483155',
 };
 const CHANNEL_LABELS = {
-  direct:'Directo', social:'Social', search:'Búsqueda', email:'Email', unknown:'Desconocido',
+  direct:'Directo', social:'Social', search:'Búsqueda', email:'Email', unknown:'Otros',
 };
 const CUSTOMER_TYPE_COLORS = { 'New':'#B67C4D', 'Returning':'#6FA967', 'Sin dato':'#56647155' };
 const CUSTOMER_TYPE_LABELS = { 'New':'Nuevos', 'Returning':'Recurrentes', 'Sin dato':'Sin dato' };
@@ -1227,6 +1247,8 @@ document.querySelectorAll('.main-tab').forEach(btn=>{
 document.getElementById('audienciasSyncBtn').addEventListener('click', renderAudienciasAll);
 document.getElementById('adsImgSyncBtn').addEventListener('click', refreshAdImages);
 document.getElementById('catalogoSyncBtn').addEventListener('click', renderCatalogoAll);
+document.getElementById('channelSyncBtn').addEventListener('click', renderChannelOnly);
+document.getElementById('engagementSyncBtn').addEventListener('click', renderEngagementAll);
 
 /* ---------- DATA HELPERS (Resumen) ---------- */
 function dayKey(mesNum, fecha){ return mesNum*100 + parseInt(fecha); }
@@ -1642,65 +1664,91 @@ function renderTrafficStackChart(){
   });
 }
 
+let channelRange = null;
+let CHANNEL_DATA = [];
+
+function setChannelSyncUI(state, label){
+  const el = document.getElementById('channelSyncStatus');
+  if(!el) return;
+  const dot = state ? `<span class="sync-dot ${state}" style="display:inline-block; margin-right:6px; vertical-align:middle;"></span>` : '';
+  el.innerHTML = dot + label;
+}
+function renderPeriodRowChannel(){
+  if(window._channelPicker){ window._channelPicker.refresh(); return; }
+  window._channelPicker = createPeriodPicker('periodRowChannel', 'last30', (range)=>{
+    channelRange = range;
+    renderChannelOnly();
+  });
+  channelRange = window._channelPicker.getRange();
+}
+async function fetchLiveChannelData(range){
+  const since = (range && range.since) || GA4_HISTORY_START;
+  const until = (range && range.until) || new Date().toISOString().slice(0,10);
+  const json = await fetchGA4(['sessions','totalUsers'], ['sessionDefaultChannelGroup'], since, until);
+  const rows = ga4RowsToObjects(json);
+  const byBucket = new Map();
+  rows.forEach(r=>{
+    const bucket = mapGA4Channel(r.sessionDefaultChannelGroup);
+    if(!byBucket.has(bucket)) byBucket.set(bucket, { fuente: bucket, sesiones: 0, visitantes: 0 });
+    const entry = byBucket.get(bucket);
+    entry.sesiones += r.sessions || 0;
+    entry.visitantes += r.totalUsers || 0;
+  });
+  return [...byBucket.values()];
+}
+
 function renderChannelChart(){
-  const rows = AMANI_DATA.channel_monthly;
-  const monthDates = [...new Set(rows.map(r=>r.mes_date))].sort();
+  const rows = CHANNEL_DATA;
   const fuentes = ['direct','social','search','email','unknown'].filter(f=> rows.some(r=>r.fuente===f));
-
   const ctx = document.getElementById('channelChart').getContext('2d');
-  const datasets = fuentes.map(f=>({
-    label: CHANNEL_LABELS[f] || f,
-    data: monthDates.map(md=>{
-      const rec = rows.find(r=>r.mes_date===md && r.fuente===f);
-      return rec ? rec.sesiones : 0;
-    }),
-    backgroundColor: CHANNEL_COLORS[f] || '#3E4831',
-    borderRadius:4, maxBarThickness:40,
-  }));
-
   if(channelChartInst) channelChartInst.destroy();
   channelChartInst = new Chart(ctx, {
-    type:'bar',
-    data:{ labels: monthDates.map(md=>{ const rec = rows.find(r=>r.mes_date===md); return rec.mes.split(' ')[0].slice(0,3) + ' ' + rec.mes.split(' ')[1].slice(2); }), datasets },
+    type:'doughnut',
+    data:{
+      labels: fuentes.map(f=>CHANNEL_LABELS[f]||f),
+      datasets:[{ data: fuentes.map(f=>{ const r=rows.find(x=>x.fuente===f); return r?r.sesiones:0; }), backgroundColor: fuentes.map(f=>CHANNEL_COLORS[f]) }]
+    },
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{
         legend:{ position:'bottom', labels:{ font:{family:'Inter', size:11}, color:'#3E4831', usePointStyle:true, boxWidth:8 } },
-        tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=> c.dataset.label+': '+fmtVal(c.raw,'int')+' sesiones' } }
-      },
-      scales:{
-        x:{ stacked:true, grid:{display:false}, ticks:{ font:{family:'Inter', size:10, weight:600}, color:'#566471' } },
-        y:{ stacked:true, grid:{color:'rgba(62,72,49,0.08)'}, ticks:{ font:{family:'Inter', size:10}, color:'#566471', callback:(v)=>fmtVal(v,'int') } }
+        tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=> c.label+': '+fmtVal(c.raw,'int')+' sesiones' } }
       }
     }
   });
 }
 
 function renderChannelTable(){
-  const rows = AMANI_DATA.channel_monthly;
-  const monthDates = [...new Set(rows.map(r=>r.mes_date))].sort();
-  const fuentes = ['direct','social','search','email','unknown'].filter(f=> rows.some(r=>r.fuente===f));
-
+  const rows = [...CHANNEL_DATA].sort((a,b)=>b.sesiones-a.sesiones);
+  const totalSesiones = sum(rows,'sesiones');
   const head = document.getElementById('channelTableHead');
-  head.innerHTML = `<th>Fuente</th>` + monthDates.map(md=>{
-    const rec = rows.find(r=>r.mes_date===md);
-    return `<th>${rec.mes.split(' ')[0].slice(0,3)} ${rec.mes.split(' ')[1].slice(2)}</th>`;
-  }).join('') + `<th>Total</th>`;
-
+  head.innerHTML = `<th>Fuente</th><th>Sesiones</th><th>Visitantes</th><th>% del total</th>`;
   const body = document.getElementById('channelTableBody');
   body.innerHTML = '';
-  fuentes.forEach(f=>{
-    let total = 0;
-    const cells = monthDates.map(md=>{
-      const rec = rows.find(r=>r.mes_date===md && r.fuente===f);
-      const val = rec ? rec.sesiones : 0;
-      total += val;
-      return `<td>${fmtVal(val,'int')}</td>`;
-    }).join('');
+  rows.forEach(r=>{
+    const pct = totalSesiones ? (r.sesiones/totalSesiones*100) : 0;
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td><span class="obj-swatch" style="background:${CHANNEL_COLORS[f]}; display:inline-block; margin-right:6px;"></span>${CHANNEL_LABELS[f]||f}</td>${cells}<td style="font-weight:700;">${fmtVal(total,'int')}</td>`;
+    tr.innerHTML = `<td><span class="obj-swatch" style="background:${CHANNEL_COLORS[r.fuente]}; display:inline-block; margin-right:6px;"></span>${CHANNEL_LABELS[r.fuente]||r.fuente}</td><td>${fmtVal(r.sesiones,'int')}</td><td>${fmtVal(r.visitantes,'int')}</td><td>${pct.toFixed(1)}%</td>`;
     body.appendChild(tr);
   });
+}
+
+async function renderChannelOnly(){
+  safe(renderPeriodRowChannel, 'periodRowChannel');
+  setChannelSyncUI('', 'Google Analytics 4 — conectando en vivo…');
+  try{
+    CHANNEL_DATA = await fetchLiveChannelData(channelRange);
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
+    const rango = (channelRange && channelRange.since) ? channelRange.label : 'Todo el histórico';
+    setChannelSyncUI('ok', `Google Analytics 4 — En vivo · sincronizado ${hh}:${mm} · ${rango}`);
+  } catch(err){
+    console.error('Channel live fetch failed:', err);
+    setChannelSyncUI('err', `Google Analytics 4 — sin conexión al endpoint en vivo (${err.message})`);
+    CHANNEL_DATA = [];
+  }
+  safe(renderChannelChart, 'channelChart');
+  safe(renderChannelTable, 'channelTable');
 }
 
 function renderAdsTrafficChart(){
@@ -1831,11 +1879,6 @@ function renderObjGroups(){
     group.appendChild(body);
     container.appendChild(group);
   });
-}
-
-function renderChannelOnly(){
-  safe(renderChannelChart, 'channelChart');
-  safe(renderChannelTable, 'channelTable');
 }
 
 function renderMetaAdsAll(){
@@ -2169,69 +2212,89 @@ syncNow();
 /* =========================================================
    VISTA: ENGAGEMENT WEB
    ========================================================= */
-let engagementPeriod = 'Todo';
+let engagementRange = null;
 let sessionsChartInst, ratesChartInst, crossRefChartInst;
+let ENGAGEMENT_KPIS = {};
+let ENGAGEMENT_MONTHLY = [];
 
-function getEngagementFiltered(){
-  const rows = AMANI_DATA.site_sessions_monthly;
-  if(engagementPeriod==='Todo') return rows;
-  return rows.filter(r=>r.mes===engagementPeriod);
+function setEngagementSyncUI(state, label){
+  const el = document.getElementById('engagementSyncStatus');
+  if(!el) return;
+  const dot = state ? `<span class="sync-dot ${state}" style="display:inline-block; margin-right:6px; vertical-align:middle;"></span>` : '';
+  el.innerHTML = dot + label;
 }
 
 function renderPeriodRowEngagement(){
-  const row = document.getElementById('periodRowEngagement');
-  row.innerHTML = '<span class="period-label">Periodo</span>';
-  const months = AMANI_DATA.site_sessions_monthly.map(r=>r.mes);
-  const periods = ['Todo', ...months];
-  periods.forEach(p=>{
-    const chip = document.createElement('button');
-    chip.className = 'chip' + (p===engagementPeriod?' active':'');
-    chip.textContent = p;
-    chip.onclick = ()=>{ engagementPeriod = p; renderEngagementAll(); };
-    row.appendChild(chip);
+  if(window._engagementPicker){ window._engagementPicker.refresh(); return; }
+  window._engagementPicker = createPeriodPicker('periodRowEngagement', 'last30', (range)=>{
+    engagementRange = range;
+    renderEngagementAll();
   });
+  engagementRange = window._engagementPicker.getRange();
 }
 
-function computeEngagementDelta(key){
-  const rows = AMANI_DATA.site_sessions_monthly;
-  let idx;
-  if(engagementPeriod==='Todo'){ idx = rows.length - 1; }
-  else { idx = rows.findIndex(r=>r.mes===engagementPeriod); }
-  if(idx<=0) return null;
-  const a = rows[idx][key], b = rows[idx-1][key];
+const GA4_ENGAGEMENT_METRICS = ['sessions','totalUsers','bounceRate','averageSessionDuration','screenPageViewsPerSession','addToCarts','checkouts','ecommercePurchases'];
+
+function shapeEngagementRow(r){
+  const sesiones = r.sessions || 0;
+  return {
+    visitantes: r.totalUsers || 0,
+    sesiones,
+    duracion_media: r.averageSessionDuration || null,
+    vistas_pagina_sesion: r.screenPageViewsPerSession || null,
+    tasa_atc: sesiones ? (r.addToCarts||0)/sesiones : 0,
+    tasa_conversion: sesiones ? (r.ecommercePurchases||0)/sesiones : 0,
+    tasa_rebote: r.bounceRate || 0,
+    checkout_iniciado: r.checkouts || 0,
+    checkout_completado: r.ecommercePurchases || 0,
+  };
+}
+
+async function fetchEngagementAggregate(range){
+  const since = (range && range.since) || GA4_HISTORY_START;
+  const until = (range && range.until) || new Date().toISOString().slice(0,10);
+  const json = await fetchGA4(GA4_ENGAGEMENT_METRICS, [], since, until);
+  const rows = ga4RowsToObjects(json);
+  return rows[0] ? shapeEngagementRow(rows[0]) : shapeEngagementRow({});
+}
+
+async function fetchEngagementMonthly(){
+  const json = await fetchGA4(GA4_ENGAGEMENT_METRICS, ['yearMonth'], GA4_HISTORY_START, new Date().toISOString().slice(0,10));
+  const rows = ga4RowsToObjects(json);
+  return rows.map(r=>{
+    const ym = r.yearMonth; // "202602"
+    const year = ym.slice(0,4), monthNum = parseInt(ym.slice(4,6));
+    return { mes_date: `${year}-${String(monthNum).padStart(2,'0')}-01`, mes: `${MESES_NUM_NAME_JS[monthNum]} ${year}`, ...shapeEngagementRow(r) };
+  }).sort((a,b)=> a.mes_date.localeCompare(b.mes_date));
+}
+
+function computeEngagementDelta(current, previous, key){
+  const a = current[key], b = previous[key];
   if(a===null||b===null||b===0||a===undefined||b===undefined) return null;
   return ((a-b)/Math.abs(b))*100;
 }
 
 function deltaHtmlFor(key){
-  const delta = computeEngagementDelta(key);
-  if(delta===null) return '';
+  const delta = ENGAGEMENT_KPIS.delta ? ENGAGEMENT_KPIS.delta[key] : null;
+  if(delta===null || delta===undefined) return '';
   const cls = delta>0.5?'pos':(delta<-0.5?'neg':'flat');
   const arrow = delta>0.5?'↑':(delta<-0.5?'↓':'→');
-  return `<div class="kpi-delta ${cls}">${arrow} ${Math.abs(delta).toFixed(0)}% vs mes anterior</div>`;
+  return `<div class="kpi-delta ${cls}">${arrow} ${Math.abs(delta).toFixed(0)}% vs periodo anterior</div>`;
 }
 
 function renderKPIsEngagement(){
   const grid = document.getElementById('kpiGridEngagement');
   grid.innerHTML = '';
-  const rows = getEngagementFiltered();
-  const visitantes = sum(rows,'visitantes');
-  const sesiones = sum(rows,'sesiones');
-  const checkoutIni = sum(rows,'checkout_iniciado');
-  const checkoutComp = sum(rows,'checkout_completado');
-  const tasaConv = avg(rows,'tasa_conversion');
-  const tasaRebote = avg(rows,'tasa_rebote');
-  const tasaAtc = avg(rows,'tasa_atc');
-  const duracion = avg(rows,'duracion_media');
+  const c = ENGAGEMENT_KPIS.current || {};
   const cards = [
-    {label:'Visitantes', val:fmtVal(visitantes,'int'), key:'visitantes'},
-    {label:'Sesiones Totales', val:fmtVal(sesiones,'int'), key:'sesiones'},
-    {label:'Tasa de Conversión', val: tasaConv!==null ? (tasaConv*100).toFixed(2)+'%' : '—', key:'tasa_conversion'},
-    {label:'Tasa de Rebote', val: tasaRebote!==null ? (tasaRebote*100).toFixed(1)+'%' : '—', key:'tasa_rebote'},
-    {label:'Tasa de Add to Cart', val: tasaAtc!==null ? (tasaAtc*100).toFixed(2)+'%' : '—', key:'tasa_atc'},
-    {label:'Duración Media Sesión', val: duracion!==null ? duracion.toFixed(0)+' s' : '—', key:'duracion_media'},
-    {label:'Checkouts Iniciados', val:fmtVal(checkoutIni,'int'), key:'checkout_iniciado'},
-    {label:'Checkouts Completados', val:fmtVal(checkoutComp,'int'), key:'checkout_completado'},
+    {label:'Visitantes', val:fmtVal(c.visitantes,'int'), key:'visitantes'},
+    {label:'Sesiones Totales', val:fmtVal(c.sesiones,'int'), key:'sesiones'},
+    {label:'Tasa de Conversión', val: c.tasa_conversion!==undefined ? (c.tasa_conversion*100).toFixed(2)+'%' : '—', key:'tasa_conversion'},
+    {label:'Tasa de Rebote', val: c.tasa_rebote!==undefined ? (c.tasa_rebote*100).toFixed(1)+'%' : '—', key:'tasa_rebote'},
+    {label:'Tasa de Add to Cart', val: c.tasa_atc!==undefined ? (c.tasa_atc*100).toFixed(2)+'%' : '—', key:'tasa_atc'},
+    {label:'Duración Media Sesión', val: c.duracion_media!==null && c.duracion_media!==undefined ? c.duracion_media.toFixed(0)+' s' : '—', key:'duracion_media'},
+    {label:'Checkouts Iniciados', val:fmtVal(c.checkout_iniciado,'int'), key:'checkout_iniciado'},
+    {label:'Checkouts Completados (Compras)', val:fmtVal(c.checkout_completado,'int'), key:'checkout_completado'},
   ];
   cards.forEach(c=>{
     const card = document.createElement('div');
@@ -2242,7 +2305,7 @@ function renderKPIsEngagement(){
 }
 
 function renderSessionsChart(){
-  const rows = AMANI_DATA.site_sessions_monthly;
+  const rows = ENGAGEMENT_MONTHLY;
   const ctx = document.getElementById('sessionsChart').getContext('2d');
   if(sessionsChartInst) sessionsChartInst.destroy();
   sessionsChartInst = new Chart(ctx, {
@@ -2250,12 +2313,8 @@ function renderSessionsChart(){
     data:{
       labels: rows.map(r=>r.mes.split(' ')[0].slice(0,3)+' '+r.mes.split(' ')[1].slice(2)),
       datasets:[
-        { label:'Sesiones', data: rows.map(r=>r.sesiones),
-          backgroundColor: rows.map(r=> r.mes===engagementPeriod ? '#B67C4D' : '#3E483199'),
-          borderRadius:6, maxBarThickness:34 },
-        { label:'Visitantes', data: rows.map(r=>r.visitantes),
-          backgroundColor: rows.map(r=> r.mes===engagementPeriod ? '#B67C4D55' : '#6FA96799'),
-          borderRadius:6, maxBarThickness:34 },
+        { label:'Sesiones', data: rows.map(r=>r.sesiones), backgroundColor:'#3E483199', borderRadius:6, maxBarThickness:34 },
+        { label:'Visitantes', data: rows.map(r=>r.visitantes), backgroundColor:'#6FA96799', borderRadius:6, maxBarThickness:34 },
       ]
     },
     options:{
@@ -2273,7 +2332,7 @@ function renderSessionsChart(){
 }
 
 function renderRatesChart(){
-  const rows = AMANI_DATA.site_sessions_monthly;
+  const rows = ENGAGEMENT_MONTHLY;
   const ctx = document.getElementById('ratesChart').getContext('2d');
   if(ratesChartInst) ratesChartInst.destroy();
   const pctFmt = (v)=> v===null||v===undefined ? null : v*100;
@@ -2312,10 +2371,8 @@ function renderRatesChart(){
 }
 
 function renderCheckoutFunnel(){
-  const rows = getEngagementFiltered();
-  const sesiones = sum(rows,'sesiones');
-  const ini = sum(rows,'checkout_iniciado');
-  const comp = sum(rows,'checkout_completado');
+  const c = ENGAGEMENT_KPIS.current || {};
+  const sesiones = c.sesiones||0, ini = c.checkout_iniciado||0, comp = c.checkout_completado||0;
   const steps = [
     {label:'Sesiones', val:sesiones, color:'#566471'},
     {label:'Checkout Iniciado', val:ini, color:'#B67C4D'},
@@ -2352,6 +2409,7 @@ const ENGAGEMENT_COLS = [
 function fmtEngagement(v, fmt){
   if(v===null || v===undefined || isNaN(v)) return '—';
   if(fmt==='pct2') return (v*100).toFixed(2)+'%';
+  if(fmt==='pct') return (v*100).toFixed(1)+'%';
   return fmtVal(v, fmt);
 }
 
@@ -2360,7 +2418,7 @@ function renderEngagementTable(){
   head.innerHTML = ENGAGEMENT_COLS.map(c=>`<th>${c.label}</th>`).join('');
   const body = document.getElementById('engagementTableBody');
   body.innerHTML = '';
-  getEngagementFiltered().forEach(r=>{
+  ENGAGEMENT_MONTHLY.forEach(r=>{
     const tr = document.createElement('tr');
     tr.innerHTML = ENGAGEMENT_COLS.map(c=>{
       if(c.key==='mes') return `<td><span class="month-tag">${r.mes}</span></td>`;
@@ -2371,29 +2429,20 @@ function renderEngagementTable(){
 }
 
 function renderCrossRefChart(){
-  const rows = AMANI_DATA.site_sessions_monthly;
+  const rows = ENGAGEMENT_MONTHLY.map(r=>{
+    const metaRow = (AMANI_DATA.traffic_totals_monthly||[]).find(t=> r.mes.startsWith(t.mes));
+    const meta_lpv = metaRow ? metaRow.lpv : 0;
+    return { ...r, meta_lpv, pct_atribuible_meta: r.sesiones ? (meta_lpv/r.sesiones*100) : 0 };
+  });
   const ctx = document.getElementById('crossRefChart').getContext('2d');
   if(crossRefChartInst) crossRefChartInst.destroy();
   crossRefChartInst = new Chart(ctx, {
     data:{
       labels: rows.map(r=>r.mes.split(' ')[0].slice(0,3)+' '+r.mes.split(' ')[1].slice(2)),
       datasets:[
-        {
-          type:'bar', label:'Sesiones Totales',
-          data: rows.map(r=>r.sesiones),
-          backgroundColor: rows.map(r=> r.mes===engagementPeriod ? '#B67C4D' : '#3E483188'),
-          borderRadius:6, maxBarThickness:34, yAxisID:'y',
-        },
-        {
-          type:'bar', label:'Sesiones vía Meta Ads (LPV)',
-          data: rows.map(r=>r.meta_lpv),
-          backgroundColor:'#6FA967', borderRadius:6, maxBarThickness:34, yAxisID:'y',
-        },
-        {
-          type:'line', label:'% Atribuible a Meta',
-          data: rows.map(r=>r.pct_atribuible_meta),
-          borderColor:'#B0503A', borderWidth:2, pointRadius:3, tension:.3, yAxisID:'y1',
-        }
+        { type:'bar', label:'Sesiones Totales', data: rows.map(r=>r.sesiones), backgroundColor:'#3E483188', borderRadius:6, maxBarThickness:34, yAxisID:'y' },
+        { type:'bar', label:'Sesiones vía Meta Ads (LPV)', data: rows.map(r=>r.meta_lpv), backgroundColor:'#6FA967', borderRadius:6, maxBarThickness:34, yAxisID:'y' },
+        { type:'line', label:'% Atribuible a Meta', data: rows.map(r=>r.pct_atribuible_meta), borderColor:'#B0503A', borderWidth:2, pointRadius:3, tension:.3, yAxisID:'y1' }
       ]
     },
     options:{
@@ -2412,8 +2461,36 @@ function renderCrossRefChart(){
   });
 }
 
-function renderEngagementAll(){
+async function renderEngagementAll(){
   safe(renderPeriodRowEngagement, 'periodRowEngagement');
+  setEngagementSyncUI('', 'Google Analytics 4 — conectando en vivo…');
+  try{
+    const range = engagementRange;
+    let previous = {};
+    const promises = [fetchEngagementAggregate(range), fetchEngagementMonthly()];
+    if(range && range.since){
+      const sinceD = new Date(range.since+'T00:00:00'), untilD = new Date(range.until+'T00:00:00');
+      const lengthDays = Math.round((untilD-sinceD)/86400000)+1;
+      const prevUntil = new Date(sinceD); prevUntil.setDate(prevUntil.getDate()-1);
+      const prevSince = new Date(prevUntil); prevSince.setDate(prevSince.getDate()-(lengthDays-1));
+      promises.push(fetchEngagementAggregate({ since: prevSince.toISOString().slice(0,10), until: prevUntil.toISOString().slice(0,10) }));
+    }
+    const [current, monthly, prevResult] = await Promise.all(promises);
+    ENGAGEMENT_MONTHLY = monthly;
+    const delta = {};
+    if(prevResult){ Object.keys(current).forEach(k=>{ delta[k] = computeEngagementDelta(current, prevResult, k); }); }
+    ENGAGEMENT_KPIS = { current, previous: prevResult||{}, delta };
+
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
+    const rango = (range && range.since) ? range.label : 'Todo el histórico';
+    setEngagementSyncUI('ok', `Google Analytics 4 — En vivo · sincronizado ${hh}:${mm} · ${rango}`);
+  } catch(err){
+    console.error('Engagement live fetch failed:', err);
+    setEngagementSyncUI('err', `Google Analytics 4 — sin conexión al endpoint en vivo (${err.message})`);
+    ENGAGEMENT_KPIS = { current: {}, delta: {} };
+    ENGAGEMENT_MONTHLY = [];
+  }
   safe(renderKPIsEngagement, 'kpisEngagement');
   safe(renderSessionsChart, 'sessionsChart');
   safe(renderCrossRefChart, 'crossRefChart');
@@ -2709,6 +2786,30 @@ function renderPeriodRowCatalogo(){
     renderCatalogoAll();
   });
   catalogoRange = window._catalogoPicker.getRange();
+}
+
+const GA4_HISTORY_START = '2025-01-01'; // fecha de referencia para "Todo el histórico" en GA4
+
+async function fetchGA4(metrics, dimensions, since, until){
+  const params = new URLSearchParams();
+  params.set('metrics', metrics.join(','));
+  if(dimensions && dimensions.length) params.set('dimensions', dimensions.join(','));
+  params.set('since', since || GA4_HISTORY_START);
+  params.set('until', until || new Date().toISOString().slice(0,10));
+  const res = await fetch(`/api/ga4-analytics?${params.toString()}`);
+  const json = await res.json().catch(()=>({}));
+  if(!res.ok || json.error) throw new Error(json.error || ('HTTP ' + res.status));
+  return json;
+}
+function ga4RowsToObjects(json){
+  const metricNames = (json.metricHeaders||[]).map(h=>h.name);
+  const dimNames = (json.dimensionHeaders||[]).map(h=>h.name);
+  return (json.rows||[]).map(r=>{
+    const obj = {};
+    (r.dimensionValues||[]).forEach((d,i)=>{ obj[dimNames[i]] = d.value; });
+    (r.metricValues||[]).forEach((m,i)=>{ obj[metricNames[i]] = parseFloat(m.value); });
+    return obj;
+  });
 }
 
 async function fetchShopifySales(timeRange){
