@@ -336,6 +336,7 @@
     <button class="main-tab" data-view="ads">Mejores Anuncios</button>
     <button class="main-tab" data-view="audiencias">Audiencias</button>
     <button class="main-tab" data-view="metaads">Meta Ads</button>
+    <button class="main-tab" data-view="googleads">Google Ads</button>
     <button class="main-tab" data-view="trafico">Tráfico Web</button>
     <button class="main-tab" data-view="engagement">Engagement Web</button>
   </div>
@@ -644,6 +645,50 @@
 
   </div>
 
+  <!-- ===================== VISTA: GOOGLE ADS ===================== -->
+  <div class="view" id="view-googleads">
+
+    <div class="period-row" id="periodRowGoogleAds"></div>
+
+    <div class="sync-box" style="margin-bottom:16px;">
+      <div class="sync-status" id="googleAdsSyncStatus" style="flex:1;">Google Ads — conectando en vivo…</div>
+      <button class="sync-btn" id="googleAdsSyncBtn" title="Actualizar ahora">↻ Actualizar</button>
+    </div>
+
+    <div class="kpi-section-label">Google Ads — resumen del periodo</div>
+    <div class="kpi-grid" id="kpiGridGoogleAds"></div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Inversión y Conversiones — evolución mensual</div>
+          <div class="panel-sub">Barras: inversión · Línea: valor de conversiones</div>
+          <span class="source-badge ga4">Google Ads API · En vivo</span>
+        </div>
+      </div>
+      <div class="chart-box"><canvas id="googleAdsMonthlyChart"></canvas></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Desempeño por Campaña</div>
+          <div class="panel-sub">Clic en un encabezado para ordenar</div>
+          <span class="source-badge ga4">Google Ads API · En vivo</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="googleAdsCampaignTable">
+          <thead><tr id="googleAdsCampaignTableHead"></tr></thead>
+          <tbody id="googleAdsCampaignTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="footer-note">En vivo — Google Ads API. El costo se reporta en la moneda de la cuenta de Google Ads. ROAS = Valor de Conversiones ÷ Inversión.</div>
+
+  </div>
+
   <!-- ===================== VISTA: ENGAGEMENT WEB ===================== -->
   <div class="view" id="view-engagement">
 
@@ -751,7 +796,8 @@
         </select>
       </div>
     </div>
-    <div class="ads-count" id="adsCount" style="margin-bottom:14px;"></div>
+    <div class="ads-count" id="adsCount" style="margin-bottom:6px;"></div>
+    <div class="footer-note" style="text-align:left; margin-bottom:14px;">🔴 La alerta de fatiga de creativo compara la primera mitad del periodo vs la segunda, y solo se activa con suficiente muestra (150+ impresiones por mitad) — en periodos muy cortos (7-14 días) casi ningún anuncio va a alcanzar eso. Para ver alertas de fatiga de forma confiable, usa 30 días o Todo el histórico.</div>
 
     <div class="ads-grid" id="adsGrid"></div>
 
@@ -1324,6 +1370,7 @@ document.querySelectorAll('.main-tab').forEach(btn=>{
     document.getElementById('view-'+btn.dataset.view).classList.add('active');
     if(btn.dataset.view==='trafico'){ renderChannelOnly(); }
     if(btn.dataset.view==='metaads'){ renderMetaAdsAll(); }
+    if(btn.dataset.view==='googleads'){ renderGoogleAdsAll(); }
     if(btn.dataset.view==='engagement'){ renderEngagementAll(); }
     if(btn.dataset.view==='ads'){ renderAdsAll(); }
     if(btn.dataset.view==='audiencias'){ renderAudienciasAll(); }
@@ -1335,6 +1382,7 @@ document.getElementById('adsImgSyncBtn').addEventListener('click', refreshAdImag
 document.getElementById('catalogoSyncBtn').addEventListener('click', renderCatalogoAll);
 document.getElementById('channelSyncBtn').addEventListener('click', renderChannelOnly);
 document.getElementById('engagementSyncBtn').addEventListener('click', renderEngagementAll);
+document.getElementById('googleAdsSyncBtn').addEventListener('click', renderGoogleAdsAll);
 
 /* ---------- DATA HELPERS (Resumen) ---------- */
 function dayKey(mesNum, fecha){ return mesNum*100 + parseInt(fecha); }
@@ -3053,6 +3101,16 @@ function renderPeriodRowCatalogo(){
 
 const GA4_HISTORY_START = '2025-01-01'; // fecha de referencia para "Todo el histórico" en GA4
 
+async function fetchGoogleAds(since, until){
+  const params = new URLSearchParams();
+  params.set('since', since || GA4_HISTORY_START);
+  params.set('until', until || new Date().toISOString().slice(0,10));
+  const res = await fetch(`/api/google-ads?${params.toString()}`);
+  const json = await res.json().catch(()=>({}));
+  if(!res.ok || json.error) throw new Error(json.error || ('HTTP ' + res.status));
+  return json.rows || [];
+}
+
 async function fetchGA4(metrics, dimensions, since, until, eventNames){
   const params = new URLSearchParams();
   params.set('metrics', metrics.join(','));
@@ -3223,6 +3281,182 @@ async function renderCatalogoAll(){
   safe(renderCategoryChart, 'categoryChart');
   safe(renderLocationChart, 'locationChart');
   safe(renderLocationTable, 'locationTable');
+}
+
+/* =========================================================
+   VISTA: GOOGLE ADS
+   ========================================================= */
+let googleAdsRange = null;
+let GOOGLE_ADS_ROWS = [];
+let googleAdsMonthlyChartInst;
+
+function setGoogleAdsSyncUI(state, label){
+  const el = document.getElementById('googleAdsSyncStatus');
+  if(!el) return;
+  const dot = state ? `<span class="sync-dot ${state}" style="display:inline-block; margin-right:6px; vertical-align:middle;"></span>` : '';
+  el.innerHTML = dot + label;
+}
+
+function renderPeriodRowGoogleAds(){
+  if(window._googleAdsPicker){ window._googleAdsPicker.refresh(); return; }
+  window._googleAdsPicker = createPeriodPicker('periodRowGoogleAds', 'last30', (range)=>{
+    googleAdsRange = range;
+    renderGoogleAdsAll();
+  });
+  googleAdsRange = window._googleAdsPicker.getRange();
+}
+
+function googleAdsTotals(rows){
+  const impressions = sum(rows,'impressions'), clicks = sum(rows,'clicks'), cost = sum(rows,'cost');
+  const conversions = sum(rows,'conversions'), conversions_value = sum(rows,'conversions_value');
+  return {
+    impressions, clicks, cost, conversions, conversions_value,
+    ctr: impressions ? (clicks/impressions*100) : null,
+    cpc: clicks ? (cost/clicks) : null,
+    cpa: conversions ? (cost/conversions) : null,
+    roas: cost ? (conversions_value/cost) : null,
+  };
+}
+
+function renderKPIsGoogleAds(){
+  const grid = document.getElementById('kpiGridGoogleAds');
+  grid.innerHTML = '';
+  const t = googleAdsTotals(GOOGLE_ADS_ROWS);
+  const cards = [
+    {label:'Inversión Total', val:fmtVal(t.cost,'money')},
+    {label:'Clics', val:fmtVal(t.clicks,'int')},
+    {label:'Impresiones', val:fmtVal(t.impressions,'int')},
+    {label:'CTR', val: t.ctr!==null ? t.ctr.toFixed(2)+'%' : '—'},
+    {label:'CPC Promedio', val:fmtVal(t.cpc,'money')},
+    {label:'Conversiones', val:fmtVal(t.conversions,'int')},
+    {label:'Costo por Conversión', val:fmtVal(t.cpa,'money')},
+    {label:'ROAS', val: t.roas!==null ? t.roas.toFixed(1)+'x' : '—'},
+  ];
+  cards.forEach(c=>{
+    const card = document.createElement('div');
+    card.className = 'kpi-card static';
+    card.innerHTML = `<span class="kpi-label">${c.label}</span><div class="kpi-value">${c.val}</div>`;
+    grid.appendChild(card);
+  });
+}
+
+function renderGoogleAdsMonthlyChart(){
+  const byMonth = new Map();
+  GOOGLE_ADS_ROWS.forEach(r=>{
+    const ym = r.date.slice(0,7); // "2026-07"
+    if(!byMonth.has(ym)) byMonth.set(ym, { cost:0, conversions_value:0 });
+    const e = byMonth.get(ym);
+    e.cost += r.cost; e.conversions_value += r.conversions_value;
+  });
+  const months = [...byMonth.keys()].sort();
+  const labels = months.map(ym=>{
+    const [y,m] = ym.split('-');
+    return MESES_NUM_NAME_JS[parseInt(m)].slice(0,3)+' '+y.slice(2);
+  });
+  const ctx = document.getElementById('googleAdsMonthlyChart').getContext('2d');
+  if(googleAdsMonthlyChartInst) googleAdsMonthlyChartInst.destroy();
+  googleAdsMonthlyChartInst = new Chart(ctx, {
+    data:{
+      labels,
+      datasets:[
+        { type:'bar', label:'Inversión', data: months.map(ym=>byMonth.get(ym).cost), backgroundColor:'#4285F4', borderRadius:6, maxBarThickness:34, yAxisID:'y' },
+        { type:'line', label:'Valor de Conversiones', data: months.map(ym=>byMonth.get(ym).conversions_value), borderColor:'#34A853', borderWidth:2, pointRadius:3, cubicInterpolationMode:'monotone', yAxisID:'y1' },
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ position:'bottom', labels:{ font:{family:'Inter', size:11}, color:'#3E4831', usePointStyle:true, boxWidth:8 } },
+        tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=> c.dataset.label+': '+fmtVal(c.raw,'money') } }
+      },
+      scales:{
+        x:{ grid:{display:false}, ticks:{ font:{family:'Inter', size:10, weight:600}, color:'#566471' } },
+        y:{ position:'left', grid:{color:'rgba(62,72,49,0.08)'}, ticks:{ font:{family:'Inter', size:10}, color:'#566471', callback:(v)=>fmtVal(v,'money') } },
+        y1:{ position:'right', grid:{display:false}, ticks:{ font:{family:'Inter', size:10}, color:'#566471', callback:(v)=>fmtVal(v,'money') } }
+      }
+    }
+  });
+}
+
+let googleAdsCampaignSort = { key:'cost', dir:-1 };
+const GOOGLE_ADS_CAMPAIGN_COLS = [
+  {key:'campaign_name', label:'Campaña'},
+  {key:'channel_type', label:'Tipo'},
+  {key:'cost', label:'Inversión', fmt:'money'},
+  {key:'clicks', label:'Clics', fmt:'int'},
+  {key:'impressions', label:'Impresiones', fmt:'int'},
+  {key:'ctr', label:'CTR', fmt:'pct2'},
+  {key:'conversions', label:'Conversiones', fmt:'int'},
+  {key:'conversions_value', label:'Valor Conv.', fmt:'money'},
+  {key:'roas', label:'ROAS', fmt:'num1'},
+];
+function fmtGoogleAds(v, fmt){
+  if(v===null||v===undefined||isNaN(v)) return '—';
+  if(fmt==='pct2') return v.toFixed(2)+'%';
+  if(fmt==='num1') return v.toFixed(2)+'x';
+  return fmtVal(v, fmt);
+}
+function renderGoogleAdsCampaignTable(){
+  const byCampaign = new Map();
+  GOOGLE_ADS_ROWS.forEach(r=>{
+    if(!byCampaign.has(r.campaign_id)) byCampaign.set(r.campaign_id, { campaign_name:r.campaign_name, channel_type:r.channel_type, impressions:0, clicks:0, cost:0, conversions:0, conversions_value:0 });
+    const e = byCampaign.get(r.campaign_id);
+    e.impressions += r.impressions; e.clicks += r.clicks; e.cost += r.cost;
+    e.conversions += r.conversions; e.conversions_value += r.conversions_value;
+  });
+  const rows = [...byCampaign.values()].map(e=>({
+    ...e, ctr: e.impressions ? (e.clicks/e.impressions*100) : 0, roas: e.cost ? (e.conversions_value/e.cost) : null,
+  }));
+
+  const head = document.getElementById('googleAdsCampaignTableHead');
+  head.innerHTML = '';
+  GOOGLE_ADS_CAMPAIGN_COLS.forEach(c=>{
+    const th = document.createElement('th');
+    th.textContent = c.label + (googleAdsCampaignSort.key===c.key ? (googleAdsCampaignSort.dir>0?' ▲':' ▼') : '');
+    th.onclick = ()=>{
+      if(googleAdsCampaignSort.key===c.key) googleAdsCampaignSort.dir *= -1;
+      else googleAdsCampaignSort = { key:c.key, dir: (c.key==='campaign_name'||c.key==='channel_type')?1:-1 };
+      renderGoogleAdsCampaignTable();
+    };
+    head.appendChild(th);
+  });
+  const sorted = [...rows].sort((a,b)=>{
+    const av=a[googleAdsCampaignSort.key], bv=b[googleAdsCampaignSort.key];
+    if(typeof av==='string') return googleAdsCampaignSort.dir*av.localeCompare(bv);
+    const an = av===null||av===undefined?-Infinity:av, bn = bv===null||bv===undefined?-Infinity:bv;
+    return googleAdsCampaignSort.dir*(an-bn);
+  });
+  const body = document.getElementById('googleAdsCampaignTableBody');
+  body.innerHTML = '';
+  sorted.forEach(r=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = GOOGLE_ADS_CAMPAIGN_COLS.map(c=>{
+      if(c.key==='campaign_name') return `<td>${r.campaign_name}</td>`;
+      if(c.key==='channel_type') return `<td>${r.channel_type||'—'}</td>`;
+      return `<td>${fmtGoogleAds(r[c.key], c.fmt)}</td>`;
+    }).join('');
+    body.appendChild(tr);
+  });
+}
+
+async function renderGoogleAdsAll(){
+  safe(renderPeriodRowGoogleAds, 'periodRowGoogleAds');
+  setGoogleAdsSyncUI('', 'Google Ads — conectando en vivo…');
+  try{
+    const range = googleAdsRange;
+    GOOGLE_ADS_ROWS = await fetchGoogleAds(range && range.since, range && range.until);
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
+    const rango = (range && range.since) ? range.label : 'Todo el histórico';
+    setGoogleAdsSyncUI('ok', `Google Ads — En vivo · sincronizado ${hh}:${mm} · ${rango}`);
+  } catch(err){
+    console.error('Google Ads live fetch failed:', err);
+    setGoogleAdsSyncUI('err', `Google Ads — sin conexión al endpoint en vivo (${err.message})`);
+    GOOGLE_ADS_ROWS = [];
+  }
+  safe(renderKPIsGoogleAds, 'kpisGoogleAds');
+  safe(renderGoogleAdsMonthlyChart, 'googleAdsMonthlyChart');
+  safe(renderGoogleAdsCampaignTable, 'googleAdsCampaignTable');
 }
 </script>
 </body>
