@@ -8,6 +8,15 @@
 
 const API_VERSION = 'v18'; // subir si Google la da de baja (igual que nos pasó con Meta)
 
+async function safeJson(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Respuesta no es JSON (status ${res.status} ${res.statusText}): ${text.slice(0, 400)}`);
+  }
+}
+
 async function getAccessToken(clientId, clientSecret, refreshToken) {
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -19,7 +28,7 @@ async function getAccessToken(clientId, clientSecret, refreshToken) {
       grant_type: 'refresh_token',
     }),
   });
-  const data = await res.json();
+  const data = await safeJson(res);
   if (!res.ok || data.error) {
     throw new Error('OAuth error: ' + (data.error_description || data.error || res.status));
   }
@@ -40,11 +49,9 @@ async function runGAQL(customerId, loginCustomerId, token, devToken, query) {
   do {
     const body = { query, pageSize: 1000 };
     if (pageToken) body.pageToken = pageToken;
-    const res = await fetch(
-      `https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:search`,
-      { method: 'POST', headers, body: JSON.stringify(body) }
-    );
-    const data = await res.json();
+    const url = `https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:search`;
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+    const data = await safeJson(res);
     if (!res.ok || data.error) {
       const msg = (data.error && data.error.message) || (Array.isArray(data) && data[0] && data[0].error && data[0].error.message) || `HTTP ${res.status}`;
       throw new Error(msg);
@@ -63,9 +70,9 @@ module.exports = async (req, res) => {
     GOOGLE_ADS_CLIENT_ID: CLIENT_ID,
     GOOGLE_ADS_CLIENT_SECRET: CLIENT_SECRET,
     GOOGLE_ADS_REFRESH_TOKEN: REFRESH_TOKEN,
-    GOOGLE_ADS_CUSTOMER_ID: CUSTOMER_ID,
-    GOOGLE_ADS_LOGIN_CUSTOMER_ID: LOGIN_CUSTOMER_ID,
   } = process.env;
+  const CUSTOMER_ID = (process.env.GOOGLE_ADS_CUSTOMER_ID || '').replace(/-/g, '');
+  const LOGIN_CUSTOMER_ID = (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || '').replace(/-/g, '') || null;
 
   if (!DEV_TOKEN || !CLIENT_ID || !CLIENT_SECRET || !REFRESH_TOKEN || !CUSTOMER_ID) {
     res.status(500).json({ error: 'Faltan variables de entorno de Google Ads en Vercel (developer token, client id/secret, refresh token o customer id).' });
