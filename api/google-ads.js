@@ -6,7 +6,10 @@
 // GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_REFRESH_TOKEN, GOOGLE_ADS_CUSTOMER_ID,
 // y opcionalmente GOOGLE_ADS_LOGIN_CUSTOMER_ID (si se accede vía un MCC).
 
-const API_VERSION = 'v18'; // subir si Google la da de baja (igual que nos pasó con Meta)
+// Subimos la versión (v18 ya está dando 404 — probablemente Google la dio de baja).
+// Además la hacemos configurable: si vuelve a pasar, se puede corregir agregando
+// GOOGLE_ADS_API_VERSION en Vercel sin tener que tocar este archivo.
+const API_VERSION = process.env.GOOGLE_ADS_API_VERSION || 'v21';
 
 async function safeJson(res) {
   const text = await res.text();
