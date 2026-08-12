@@ -56,8 +56,13 @@ async function runGAQL(customerId, loginCustomerId, token, devToken, query) {
     const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
     const data = await safeJson(res);
     if (!res.ok || data.error) {
-      const msg = (data.error && data.error.message) || (Array.isArray(data) && data[0] && data[0].error && data[0].error.message) || `HTTP ${res.status}`;
-      throw new Error(msg);
+      const errObj = data.error || (Array.isArray(data) && data[0] && data[0].error) || {};
+      const baseMsg = errObj.message || `HTTP ${res.status}`;
+      // Google Ads suele meter el detalle real (qué campo/valor está mal) dentro
+      // de error.details — el mensaje de arriba solo dice "invalid argument"
+      // sin decir de qué, así que lo incluimos completo para poder diagnosticar.
+      const detailsStr = errObj.details ? ' | details: ' + JSON.stringify(errObj.details) : '';
+      throw new Error(baseMsg + detailsStr);
     }
     (data.results || []).forEach((r) => results.push(r));
     pageToken = data.nextPageToken || null;
