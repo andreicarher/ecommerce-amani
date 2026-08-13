@@ -685,6 +685,94 @@
       </div>
     </div>
 
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Por Tipo de Campaña</div>
+            <div class="panel-sub">Search · Performance Max · Display · Shopping</div>
+            <span class="source-badge ga4">Google Ads API · En vivo</span>
+          </div>
+        </div>
+        <div class="chart-box"><canvas id="googleAdsChannelChart"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Por Dispositivo</div>
+            <div class="panel-sub">Mobile · Desktop · Tablet</div>
+            <span class="source-badge ga4">Google Ads API · En vivo</span>
+          </div>
+        </div>
+        <div class="chart-box"><canvas id="googleAdsDeviceChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Por Ubicación</div>
+          <div class="panel-sub">Ciudad y estado · clic en un encabezado para ordenar</div>
+          <span class="source-badge ga4">Google Ads API · En vivo</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="googleAdsGeoTable">
+          <thead><tr id="googleAdsGeoTableHead"></tr></thead>
+          <tbody id="googleAdsGeoTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Términos de Búsqueda</div>
+          <div class="panel-sub">Qué escribió la gente en Google antes de ver tu anuncio · top 200 por gasto</div>
+          <span class="source-badge ga4">Google Ads API · En vivo</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="googleAdsSearchTermsTable">
+          <thead><tr id="googleAdsSearchTermsTableHead"></tr></thead>
+          <tbody id="googleAdsSearchTermsTableBody"></tbody>
+        </table>
+      </div>
+      <div class="footer-note" style="text-align:left; margin-top:8px;">Solo aplica a campañas de Search — si toda tu cuenta es Performance Max o Display, esta tabla va a salir vacía (Google no expone el término de búsqueda para esos tipos de campaña).</div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Desempeño por Keyword</div>
+          <div class="panel-sub">Palabras clave que estás pujando · top 200 por gasto</div>
+          <span class="source-badge ga4">Google Ads API · En vivo</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="googleAdsKeywordsTable">
+          <thead><tr id="googleAdsKeywordsTableHead"></tr></thead>
+          <tbody id="googleAdsKeywordsTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Mejores Anuncios de Google</div>
+          <div class="panel-sub">Top 100 por gasto · clic en un encabezado para ordenar</div>
+          <span class="source-badge ga4">Google Ads API · En vivo</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="googleAdsAdsTable">
+          <thead><tr id="googleAdsAdsTableHead"></tr></thead>
+          <tbody id="googleAdsAdsTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="footer-note">En vivo — Google Ads API. El costo se reporta en la moneda de la cuenta de Google Ads. ROAS = Valor de Conversiones ÷ Inversión.</div>
 
   </div>
@@ -3101,10 +3189,11 @@ function renderPeriodRowCatalogo(){
 
 const GA4_HISTORY_START = '2025-01-01'; // fecha de referencia para "Todo el histórico" en GA4
 
-async function fetchGoogleAds(since, until){
+async function fetchGoogleAds(since, until, view){
   const params = new URLSearchParams();
   params.set('since', since || GA4_HISTORY_START);
   params.set('until', until || new Date().toISOString().slice(0,10));
+  if(view) params.set('view', view);
   const res = await fetch(`/api/google-ads?${params.toString()}`);
   const json = await res.json().catch(()=>({}));
   if(!res.ok || json.error) throw new Error(json.error || ('HTTP ' + res.status));
@@ -3439,12 +3528,28 @@ function renderGoogleAdsCampaignTable(){
   });
 }
 
+let GOOGLE_ADS_GEO_ROWS = [], GOOGLE_ADS_SEARCH_TERMS_ROWS = [], GOOGLE_ADS_KEYWORDS_ROWS = [], GOOGLE_ADS_ADS_ROWS = [];
+let googleAdsChannelChartInst, googleAdsDeviceChartInst;
+const GOOGLE_ADS_DEVICE_LABELS = { MOBILE:'Mobile', DESKTOP:'Desktop', TABLET:'Tablet', CONNECTED_TV:'Connected TV', OTHER:'Otro', UNSPECIFIED:'Sin especificar', UNKNOWN:'Desconocido' };
+
 async function renderGoogleAdsAll(){
   safe(renderPeriodRowGoogleAds, 'periodRowGoogleAds');
   setGoogleAdsSyncUI('', 'Google Ads — conectando en vivo…');
   try{
     const range = googleAdsRange;
-    GOOGLE_ADS_ROWS = await fetchGoogleAds(range && range.since, range && range.until);
+    const since = range && range.since, until = range && range.until;
+    const [campaignRows, geoRows, searchTermsRows, keywordsRows, adsRows] = await Promise.all([
+      fetchGoogleAds(since, until, 'campaign'),
+      fetchGoogleAds(since, until, 'geo'),
+      fetchGoogleAds(since, until, 'search_terms'),
+      fetchGoogleAds(since, until, 'keywords'),
+      fetchGoogleAds(since, until, 'ads'),
+    ]);
+    GOOGLE_ADS_ROWS = campaignRows;
+    GOOGLE_ADS_GEO_ROWS = geoRows;
+    GOOGLE_ADS_SEARCH_TERMS_ROWS = searchTermsRows;
+    GOOGLE_ADS_KEYWORDS_ROWS = keywordsRows;
+    GOOGLE_ADS_ADS_ROWS = adsRows;
     const now = new Date();
     const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
     const rango = (range && range.since) ? range.label : 'Todo el histórico';
@@ -3452,11 +3557,140 @@ async function renderGoogleAdsAll(){
   } catch(err){
     console.error('Google Ads live fetch failed:', err);
     setGoogleAdsSyncUI('err', `Google Ads — sin conexión al endpoint en vivo (${err.message})`);
-    GOOGLE_ADS_ROWS = [];
+    GOOGLE_ADS_ROWS = []; GOOGLE_ADS_GEO_ROWS = []; GOOGLE_ADS_SEARCH_TERMS_ROWS = []; GOOGLE_ADS_KEYWORDS_ROWS = []; GOOGLE_ADS_ADS_ROWS = [];
   }
   safe(renderKPIsGoogleAds, 'kpisGoogleAds');
   safe(renderGoogleAdsMonthlyChart, 'googleAdsMonthlyChart');
   safe(renderGoogleAdsCampaignTable, 'googleAdsCampaignTable');
+  safe(renderGoogleAdsChannelChart, 'googleAdsChannelChart');
+  safe(renderGoogleAdsDeviceChart, 'googleAdsDeviceChart');
+  safe(()=>renderGoogleAdsGenericTable('googleAdsGeoTable', GOOGLE_ADS_GEO_ROWS, GOOGLE_ADS_GEO_COLS), 'googleAdsGeoTable');
+  safe(()=>renderGoogleAdsGenericTable('googleAdsSearchTermsTable', GOOGLE_ADS_SEARCH_TERMS_ROWS, GOOGLE_ADS_SEARCHTERM_COLS), 'googleAdsSearchTermsTable');
+  safe(()=>renderGoogleAdsGenericTable('googleAdsKeywordsTable', GOOGLE_ADS_KEYWORDS_ROWS, GOOGLE_ADS_KEYWORD_COLS), 'googleAdsKeywordsTable');
+  safe(()=>renderGoogleAdsGenericTable('googleAdsAdsTable', GOOGLE_ADS_ADS_ROWS, GOOGLE_ADS_ADS_COLS), 'googleAdsAdsTable');
+}
+
+function renderGoogleAdsChannelChart(){
+  const byChannel = new Map();
+  GOOGLE_ADS_ROWS.forEach(r=>{
+    const k = r.channel_type || 'UNKNOWN';
+    byChannel.set(k, (byChannel.get(k)||0) + r.cost);
+  });
+  const entries = [...byChannel.entries()].sort((a,b)=>b[1]-a[1]);
+  const palette = ['#4285F4','#34A853','#FBBC05','#EA4335','#8E44AD','#16A085'];
+  const ctx = document.getElementById('googleAdsChannelChart').getContext('2d');
+  if(googleAdsChannelChartInst) googleAdsChannelChartInst.destroy();
+  googleAdsChannelChartInst = new Chart(ctx, {
+    type:'doughnut',
+    data:{ labels: entries.map(e=>e[0]), datasets:[{ data: entries.map(e=>e[1]), backgroundColor: palette }] },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ position:'bottom', labels:{ font:{family:'Inter', size:11}, color:'#3E4831', usePointStyle:true, boxWidth:8 } },
+        tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=> c.label+': '+fmtVal(c.raw,'money') } }
+      }
+    }
+  });
+}
+
+function renderGoogleAdsDeviceChart(){
+  const byDevice = new Map();
+  GOOGLE_ADS_ROWS.forEach(r=>{
+    const k = r.device || 'UNKNOWN';
+    byDevice.set(k, (byDevice.get(k)||0) + r.cost);
+  });
+  const entries = [...byDevice.entries()].sort((a,b)=>b[1]-a[1]);
+  const palette = ['#4285F4','#34A853','#FBBC05','#EA4335'];
+  const ctx = document.getElementById('googleAdsDeviceChart').getContext('2d');
+  if(googleAdsDeviceChartInst) googleAdsDeviceChartInst.destroy();
+  googleAdsDeviceChartInst = new Chart(ctx, {
+    type:'doughnut',
+    data:{ labels: entries.map(e=>GOOGLE_ADS_DEVICE_LABELS[e[0]]||e[0]), datasets:[{ data: entries.map(e=>e[1]), backgroundColor: palette }] },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ position:'bottom', labels:{ font:{family:'Inter', size:11}, color:'#3E4831', usePointStyle:true, boxWidth:8 } },
+        tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=> c.label+': '+fmtVal(c.raw,'money') } }
+      }
+    }
+  });
+}
+
+const GOOGLE_ADS_GEO_COLS = [
+  {key:'geo_city', label:'Ciudad'}, {key:'geo_region', label:'Estado'},
+  {key:'cost', label:'Inversión', fmt:'money'}, {key:'clicks', label:'Clics', fmt:'int'},
+  {key:'conversions', label:'Conversiones', fmt:'int'}, {key:'conversions_value', label:'Valor Conv.', fmt:'money'}, {key:'roas', label:'ROAS', fmt:'num1'},
+];
+const GOOGLE_ADS_SEARCHTERM_COLS = [
+  {key:'search_term', label:'Término de Búsqueda'}, {key:'campaign_name', label:'Campaña'},
+  {key:'cost', label:'Inversión', fmt:'money'}, {key:'clicks', label:'Clics', fmt:'int'},
+  {key:'conversions', label:'Conversiones', fmt:'int'}, {key:'conversions_value', label:'Valor Conv.', fmt:'money'},
+];
+const GOOGLE_ADS_KEYWORD_COLS = [
+  {key:'keyword', label:'Keyword'}, {key:'match_type', label:'Tipo de Concordancia'}, {key:'campaign_name', label:'Campaña'},
+  {key:'cost', label:'Inversión', fmt:'money'}, {key:'clicks', label:'Clics', fmt:'int'},
+  {key:'conversions', label:'Conversiones', fmt:'int'}, {key:'conversions_value', label:'Valor Conv.', fmt:'money'}, {key:'roas', label:'ROAS', fmt:'num1'},
+];
+const GOOGLE_ADS_ADS_COLS = [
+  {key:'ad_name', label:'Anuncio'}, {key:'ad_type', label:'Tipo'}, {key:'campaign_name', label:'Campaña'},
+  {key:'cost', label:'Inversión', fmt:'money'}, {key:'clicks', label:'Clics', fmt:'int'}, {key:'impressions', label:'Impresiones', fmt:'int'},
+  {key:'conversions', label:'Conversiones', fmt:'int'}, {key:'conversions_value', label:'Valor Conv.', fmt:'money'},
+];
+
+const GOOGLE_ADS_TABLE_SORT = {};
+function fmtGoogleAdsCell(v, fmt){
+  if(v===null||v===undefined||v===''||isNaN(v)&&fmt) {
+    if(fmt) return '—';
+    return v || '—';
+  }
+  if(fmt==='num1') return v.toFixed(2)+'x';
+  if(fmt) return fmtVal(v, fmt);
+  return v;
+}
+function renderGoogleAdsGenericTable(tableId, rawRows, cols){
+  // agregamos filas duplicadas (misma keyword/término/anuncio en distintos días) por su clave textual
+  const keyFields = cols.filter(c=>!c.fmt).map(c=>c.key);
+  const byKey = new Map();
+  rawRows.forEach(r=>{
+    const key = keyFields.map(k=>r[k]).join('|');
+    if(!byKey.has(key)){
+      const base = {};
+      keyFields.forEach(k=>{ base[k] = r[k]; });
+      base.impressions=0; base.clicks=0; base.cost=0; base.conversions=0; base.conversions_value=0;
+      byKey.set(key, base);
+    }
+    const e = byKey.get(key);
+    e.impressions += r.impressions||0; e.clicks += r.clicks||0; e.cost += r.cost||0;
+    e.conversions += r.conversions||0; e.conversions_value += r.conversions_value||0;
+  });
+  const rows = [...byKey.values()].map(r=>({ ...r, roas: r.cost ? (r.conversions_value/r.cost) : null }));
+
+  const sortState = GOOGLE_ADS_TABLE_SORT[tableId] || { key:'cost', dir:-1 };
+  const head = document.getElementById(tableId+'Head');
+  head.innerHTML = '';
+  cols.forEach(c=>{
+    const th = document.createElement('th');
+    th.textContent = c.label + (sortState.key===c.key ? (sortState.dir>0?' ▲':' ▼') : '');
+    th.onclick = ()=>{
+      if(sortState.key===c.key) sortState.dir *= -1; else { sortState.key=c.key; sortState.dir = c.fmt?-1:1; }
+      GOOGLE_ADS_TABLE_SORT[tableId] = { ...sortState };
+      renderGoogleAdsGenericTable(tableId, rawRows, cols);
+    };
+    head.appendChild(th);
+  });
+  const sorted = [...rows].sort((a,b)=>{
+    const av=a[sortState.key], bv=b[sortState.key];
+    if(typeof av==='string') return sortState.dir*String(av||'').localeCompare(String(bv||''));
+    const an = av===null||av===undefined?-Infinity:av, bn = bv===null||bv===undefined?-Infinity:bv;
+    return sortState.dir*(an-bn);
+  });
+  const body = document.getElementById(tableId+'Body');
+  body.innerHTML = '';
+  sorted.slice(0,200).forEach(r=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = cols.map(c=> `<td>${fmtGoogleAdsCell(r[c.key], c.fmt)}</td>`).join('');
+    body.appendChild(tr);
+  });
 }
 </script>
 </body>
