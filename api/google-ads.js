@@ -6,10 +6,10 @@
 // GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_REFRESH_TOKEN, GOOGLE_ADS_CUSTOMER_ID,
 // y opcionalmente GOOGLE_ADS_LOGIN_CUSTOMER_ID (si se accede vía un MCC).
 
-// Subimos la versión (v18 ya está dando 404 — probablemente Google la dio de baja).
-// Además la hacemos configurable: si vuelve a pasar, se puede corregir agregando
-// GOOGLE_ADS_API_VERSION en Vercel sin tener que tocar este archivo.
-const API_VERSION = process.env.GOOGLE_ADS_API_VERSION || 'v21';
+// v18 y v21 ya están dadas de baja por Google (confirmado en pruebas) — v23 sí funciona.
+// La dejamos configurable: si Google vuelve a dar de baja versiones, se corrige
+// agregando GOOGLE_ADS_API_VERSION en Vercel sin tener que tocar este archivo.
+const API_VERSION = process.env.GOOGLE_ADS_API_VERSION || 'v23';
 
 async function safeJson(res) {
   const text = await res.text();
@@ -50,7 +50,7 @@ async function runGAQL(customerId, loginCustomerId, token, devToken, query) {
   let pageToken = null;
   let pages = 0;
   do {
-    const body = { query, pageSize: 1000 };
+    const body = { query };
     if (pageToken) body.pageToken = pageToken;
     const url = `https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:search`;
     const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
