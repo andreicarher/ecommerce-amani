@@ -93,44 +93,118 @@ module.exports = async (req, res) => {
     res.status(400).json({ error: 'Faltan los parámetros since y until (YYYY-MM-DD).' });
     return;
   }
+  const view = req.query.view || 'campaign';
+  const dateFilter = `segments.date BETWEEN '${since}' AND '${until}'`;
+  const metricsFields = `metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value`;
 
-  // Siempre pedimos por día y por campaña — el cliente agrega según necesite
-  // (cuenta completa o por campaña), igual que hacemos con Meta y GA4.
-  const query = `
-    SELECT
-      segments.date,
-      campaign.id,
-      campaign.name,
-      campaign.advertising_channel_type,
-      campaign.status,
-      metrics.impressions,
-      metrics.clicks,
-      metrics.cost_micros,
-      metrics.conversions,
-      metrics.conversions_value
-    FROM campaign
-    WHERE segments.date BETWEEN '${since}' AND '${until}'
-  `;
+  const QUERIES = {
+    // Base: por día, campaña y dispositivo. El cliente agrega como necesite
+    // (cuenta completa, por mes, por campaña, o por dispositivo) sumando filas —
+    // sumar es válido sin importar qué tan finas vengan, así que un solo query
+    // alimenta el resumen, la evolución mensual, la tabla de campañas Y el
+    // desglose por tipo de campaña / dispositivo.
+    campaign: `
+      SELECT segments.date, segments.device, campaign.id, campaign.name,
+        campaign.advertising_channel_type, campaign.status, ${metricsFields}
+      FROM campaign WHERE ${dateFilter}`,
+    geo: `
+      SELECT campaign.id, campaign.name, segments.geo_target_city, segments.geo_target_region, ${metricsFields}
+      FROM geographic_view WHERE ${dateFilter}`,
+    search_terms: `
+      SELECT search_term_view.search_term, campaign.name, ${metricsFields}
+      FROM search_term_view WHERE ${dateFilter}
+      ORDER BY metrics.cost_micros DESC LIMIT 200`,
+    keywords: `
+      SELECT ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, campaign.name, ${metricsFields}
+      FROM keyword_view WHERE ${dateFilter}
+      ORDER BY metrics.cost_micros DESC LIMIT 200`,
+    ads: `
+      SELECT ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type, campaign.name, ${metricsFields}
+      FROM ad_group_ad WHERE ${dateFilter}
+      ORDER BY metrics.cost_micros DESC LIMIT 100`,
+  };
+
+  if (!QUERIES[view]) {
+    res.status(400).json({ error: `view no soportada: ${view}. Usa: ${Object.keys(QUERIES).join(', ')}` });
+    return;
+  }
 
   try {
     const token = await getAccessToken(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN);
-    const results = await runGAQL(CUSTOMER_ID, LOGIN_CUSTOMER_ID, token, DEV_TOKEN, query);
+    const results = await runGAQL(CUSTOMER_ID, LOGIN_CUSTOMER_ID, token, DEV_TOKEN, QUERIES[view]);
 
-    const rows = results.map((r) => ({
-      date: r.segments && r.segments.date,
-      campaign_id: r.campaign && r.campaign.id,
-      campaign_name: r.campaign && r.campaign.name,
-      channel_type: r.campaign && r.campaign.advertisingChannelType,
-      status: r.campaign && r.campaign.status,
+    const baseMetrics = (r) => ({
       impressions: parseInt((r.metrics && r.metrics.impressions) || 0, 10),
       clicks: parseInt((r.metrics && r.metrics.clicks) || 0, 10),
       cost: parseInt((r.metrics && r.metrics.costMicros) || 0, 10) / 1e6,
       conversions: parseFloat((r.metrics && r.metrics.conversions) || 0),
       conversions_value: parseFloat((r.metrics && r.metrics.conversionsValue) || 0),
-    }));
+    });
+
+    let rows;
+    if (view === 'campaign') {
+      rows = results.map((r) => ({
+        date: r.segments && r.segments.date,
+        device: r.segments && r.segments.device,
+        campaign_id: r.campaign && r.campaign.id,
+        campaign_name: r.campaign && r.campaign.name,
+        channel_type: r.campaign && r.campaign.advertisingChannelType,
+        status: r.campaign && r.campaign.status,
+        ...baseMetrics(r),
+      }));
+    } else if (view === 'geo') {
+      // segments.geo_target_city/region vienen como "geoTargetConstants/1013962"
+      // (un ID, no el nombre) — hay que resolverlos en un segundo paso.
+      rows = results.map((r) => ({
+        campaign_name: r.campaign && r.campaign.name,
+        geo_city_id: r.segments && r.segments.geoTargetCity,
+        geo_region_id: r.segments && r.segments.geoTargetRegion,
+        ...baseMetrics(r),
+      }));
+      const ids = [...new Set(rows.flatMap((r) => [r.geo_city_id, r.geo_region_id]).filter(Boolean))];
+      if (ids.length) {
+        const numericIds = ids.map((id) => id.split('/').pop());
+        const nameQuery = `SELECT geo_target_constant.id, geo_target_constant.name, geo_target_constant.target_type
+          FROM geo_target_constant WHERE geo_target_constant.id IN (${numericIds.join(',')})`;
+        try {
+          const nameResults = await runGAQL(CUSTOMER_ID, LOGIN_CUSTOMER_ID, token, DEV_TOKEN, nameQuery);
+          const nameMap = {};
+          nameResults.forEach((r) => { nameMap[r.geoTargetConstant.id] = r.geoTargetConstant.name; });
+          rows = rows.map((r) => ({
+            ...r,
+            geo_city: r.geo_city_id ? (nameMap[r.geo_city_id.split('/').pop()] || r.geo_city_id) : null,
+            geo_region: r.geo_region_id ? (nameMap[r.geo_region_id.split('/').pop()] || r.geo_region_id) : null,
+          }));
+        } catch (e) {
+          // si falla la resolución de nombres, seguimos con los IDs crudos en vez de tronar todo
+          rows = rows.map((r) => ({ ...r, geo_city: r.geo_city_id, geo_region: r.geo_region_id }));
+        }
+      }
+    } else if (view === 'search_terms') {
+      rows = results.map((r) => ({
+        search_term: r.searchTermView && r.searchTermView.searchTerm,
+        campaign_name: r.campaign && r.campaign.name,
+        ...baseMetrics(r),
+      }));
+    } else if (view === 'keywords') {
+      rows = results.map((r) => ({
+        keyword: r.adGroupCriterion && r.adGroupCriterion.keyword && r.adGroupCriterion.keyword.text,
+        match_type: r.adGroupCriterion && r.adGroupCriterion.keyword && r.adGroupCriterion.keyword.matchType,
+        campaign_name: r.campaign && r.campaign.name,
+        ...baseMetrics(r),
+      }));
+    } else if (view === 'ads') {
+      rows = results.map((r) => ({
+        ad_id: r.adGroupAd && r.adGroupAd.ad && r.adGroupAd.ad.id,
+        ad_name: (r.adGroupAd && r.adGroupAd.ad && r.adGroupAd.ad.name) || null,
+        ad_type: r.adGroupAd && r.adGroupAd.ad && r.adGroupAd.ad.type,
+        campaign_name: r.campaign && r.campaign.name,
+        ...baseMetrics(r),
+      }));
+    }
 
     res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
-    res.status(200).json({ since, until, rows });
+    res.status(200).json({ since, until, view, rows });
   } catch (err) {
     res.status(500).json({ error: 'Error consultando Google Ads: ' + err.message });
   }
