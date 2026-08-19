@@ -1380,12 +1380,19 @@ function periodLabel(preset, range){
   const found = PERIOD_PRESETS.find(p=>p.key===preset);
   return found ? found.label : 'Todo el histórico';
 }
+/* Estado de periodo COMPARTIDO entre todas las pestañas — antes cada pestaña
+   tenía su propio estado independiente y se reseteaba al cambiar de vista.
+   Ahora todos los period pickers leen/escriben este mismo objeto. */
+const SHARED_PERIOD_STATE = { preset: 'last30', customSince: null, customUntil: null };
+
 /* Crea un selector de periodo dentro de containerId. onChange(range) se
-   llama con range={since,until,preset,label} cada vez que cambia. */
+   llama con range={since,until,preset,label} cada vez que cambia.
+   El parámetro defaultPreset ya no se usa para resetear el estado (se
+   mantiene por compatibilidad de firma) — el periodo es compartido global. */
 function createPeriodPicker(containerId, defaultPreset, onChange){
   const container = document.getElementById(containerId);
   if(!container) return null;
-  const state = { preset: defaultPreset, customSince: null, customUntil: null };
+  const state = SHARED_PERIOD_STATE;
 
   function currentRangeOf(){
     const r = computePeriodRange(state.preset, state.customSince, state.customUntil);
@@ -1502,7 +1509,7 @@ function aggregateFor(key, arr){
 
 /* ---------- PERIOD SELECTOR (Resumen) ---------- */
 function renderPeriodRow(){
-  if(window._resumenPicker){ window._resumenPicker.refresh(); return; }
+  if(window._resumenPicker){ window._resumenPicker.refresh(); currentRange = window._resumenPicker.getRange(); return; }
   window._resumenPicker = createPeriodPicker('periodRow', 'last30', (range)=>{
     currentRange = range;
     renderAll();
@@ -1867,7 +1874,7 @@ function getTrafficCampaignsFiltered(){
 }
 
 function renderPeriodRowTraffic(){
-  if(window._trafficPicker){ window._trafficPicker.refresh(); return; }
+  if(window._trafficPicker){ window._trafficPicker.refresh(); trafficRange = window._trafficPicker.getRange(); return; }
   window._trafficPicker = createPeriodPicker('periodRowTraffic', 'all', (range)=>{
     trafficRange = range;
     renderMetaAdsAll();
@@ -1958,7 +1965,7 @@ function setChannelSyncUI(state, label){
   el.innerHTML = dot + label;
 }
 function renderPeriodRowChannel(){
-  if(window._channelPicker){ window._channelPicker.refresh(); return; }
+  if(window._channelPicker){ window._channelPicker.refresh(); channelRange = window._channelPicker.getRange(); return; }
   window._channelPicker = createPeriodPicker('periodRowChannel', 'last30', (range)=>{
     channelRange = range;
     renderChannelOnly();
@@ -2291,7 +2298,7 @@ function getTopAdsForPeriod(range){
   });
 }
 function renderPeriodRowAds(){
-  if(window._adsPicker){ window._adsPicker.refresh(); return; }
+  if(window._adsPicker){ window._adsPicker.refresh(); adsRange = window._adsPicker.getRange(); return; }
   window._adsPicker = createPeriodPicker('periodRowAds', 'all', (range)=>{
     adsRange = range;
     renderAdsGrid();
@@ -2603,7 +2610,7 @@ function setEngagementSyncUI(state, label){
 }
 
 function renderPeriodRowEngagement(){
-  if(window._engagementPicker){ window._engagementPicker.refresh(); return; }
+  if(window._engagementPicker){ window._engagementPicker.refresh(); engagementRange = window._engagementPicker.getRange(); return; }
   window._engagementPicker = createPeriodPicker('periodRowEngagement', 'last30', (range)=>{
     engagementRange = range;
     renderEngagementAll();
@@ -3115,7 +3122,7 @@ function clampToAccountStart(range){
 }
 
 function renderPeriodRowAudiencias(){
-  if(window._audienciasPicker){ window._audienciasPicker.refresh(); return; }
+  if(window._audienciasPicker){ window._audienciasPicker.refresh(); audienciasRange = clampToAccountStart(window._audienciasPicker.getRange()); return; }
   window._audienciasPicker = createPeriodPicker('periodRowAudiencias', 'all', (range)=>{
     audienciasRange = clampToAccountStart(range);
     renderAudienciasAll();
@@ -3179,7 +3186,7 @@ function computeCatalogoTimeRange(period){
 }
 
 function renderPeriodRowCatalogo(){
-  if(window._catalogoPicker){ window._catalogoPicker.refresh(); return; }
+  if(window._catalogoPicker){ window._catalogoPicker.refresh(); catalogoRange = window._catalogoPicker.getRange(); return; }
   window._catalogoPicker = createPeriodPicker('periodRowCatalogo', 'last30', (range)=>{
     catalogoRange = range;
     renderCatalogoAll();
@@ -3387,7 +3394,7 @@ function setGoogleAdsSyncUI(state, label){
 }
 
 function renderPeriodRowGoogleAds(){
-  if(window._googleAdsPicker){ window._googleAdsPicker.refresh(); return; }
+  if(window._googleAdsPicker){ window._googleAdsPicker.refresh(); googleAdsRange = window._googleAdsPicker.getRange(); return; }
   window._googleAdsPicker = createPeriodPicker('periodRowGoogleAds', 'last30', (range)=>{
     googleAdsRange = range;
     renderGoogleAdsAll();
