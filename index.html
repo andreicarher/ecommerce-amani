@@ -446,11 +446,17 @@
 
     <div class="kpi-grid" id="kpiGridCatalogo" style="margin-bottom:26px;"></div>
 
+    <div class="period-row" style="margin-bottom:8px;">
+      <span class="period-label">Ver por</span>
+      <button class="chip active" id="catalogoMetricRevenue">Ingresos</button>
+      <button class="chip" id="catalogoMetricOrders">Pedidos</button>
+    </div>
+
     <div class="panel">
       <div class="panel-head">
         <div>
           <div class="panel-title">Ventas por Producto</div>
-          <div class="panel-sub">Top 15 por ingresos · fuente: Shopify en vivo</div>
+          <div class="panel-sub" id="productChartSub">Top 15 por ingresos · fuente: Shopify en vivo</div>
           <span class="source-badge shopify">Shopify Admin API · En vivo</span>
         </div>
       </div>
@@ -462,7 +468,7 @@
         <div class="panel-head">
           <div>
             <div class="panel-title">Ventas por Categoría</div>
-            <div class="panel-sub">Product Type de Shopify</div>
+            <div class="panel-sub" id="categoryChartSub">Product Type de Shopify</div>
           <span class="source-badge shopify">Shopify Admin API · En vivo</span>
           </div>
         </div>
@@ -472,7 +478,7 @@
         <div class="panel-head">
           <div>
             <div class="panel-title">Ventas por Estado</div>
-            <div class="panel-sub">Según dirección de envío</div>
+            <div class="panel-sub" id="locationChartSub">Según dirección de envío</div>
           </div>
         </div>
         <div class="chart-box"><canvas id="locationChart"></canvas></div>
@@ -3267,18 +3273,23 @@ function renderKPIsCatalogo(){
   });
 }
 
+let catalogoMetric = 'revenue'; // 'revenue' | 'orders'
+
 function renderProductChart(){
-  const d = [...CATALOGO_DATA.by_product].slice(0,15);
+  const metricKey = catalogoMetric;
+  const metricLabel = metricKey==='revenue' ? 'ingresos' : 'pedidos';
+  document.getElementById('productChartSub').textContent = `Top 15 por ${metricLabel} · fuente: Shopify en vivo`;
+  const d = [...CATALOGO_DATA.by_product].sort((a,b)=>b[metricKey]-a[metricKey]).slice(0,15);
   const ctx = document.getElementById('productChart').getContext('2d');
   if(productChartInst) productChartInst.destroy();
   productChartInst = new Chart(ctx, {
     type:'bar',
-    data:{ labels:d.map(x=>x.product), datasets:[{ label:'Ventas', data:d.map(x=>x.revenue), backgroundColor:'#B67C4D', borderRadius:5 }] },
+    data:{ labels:d.map(x=>x.product), datasets:[{ label: metricKey==='revenue'?'Ventas':'Pedidos', data:d.map(x=>x[metricKey]), backgroundColor:'#B67C4D', borderRadius:5 }] },
     options:{
       indexAxis:'y', responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=>fmtCat(c.raw,'money') } } },
+      plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=>fmtCat(c.raw, metricKey==='revenue'?'money':'int') } } },
       scales:{
-        x:{ grid:{color:'rgba(62,72,49,0.08)'}, ticks:{ font:{family:'Inter', size:10}, color:'#566471', callback:(v)=>fmtCat(v,'money') } },
+        x:{ grid:{color:'rgba(62,72,49,0.08)'}, ticks:{ font:{family:'Inter', size:10}, color:'#566471', callback:(v)=>fmtCat(v, metricKey==='revenue'?'money':'int') } },
         y:{ grid:{display:false}, ticks:{ font:{family:'Inter', size:10}, color:'#566471' } }
       }
     }
@@ -3286,40 +3297,46 @@ function renderProductChart(){
 }
 
 function renderCategoryChart(){
+  const metricKey = catalogoMetric;
+  const metricLabel = metricKey==='revenue' ? 'Ingresos' : 'Pedidos';
+  document.getElementById('categoryChartSub').textContent = `Product Type de Shopify · ${metricLabel}`;
   const d = CATALOGO_DATA.by_category;
   const ctx = document.getElementById('categoryChart').getContext('2d');
   if(categoryChartInst) categoryChartInst.destroy();
   const palette = ['#3E4831','#B67C4D','#6FA967','#566471','#C4A24A','#8A9A5B','#A0522D','#5B7C99'];
   categoryChartInst = new Chart(ctx, {
     type:'doughnut',
-    data:{ labels:d.map(x=>x.category), datasets:[{ data:d.map(x=>x.revenue), backgroundColor:palette }] },
+    data:{ labels:d.map(x=>x.category), datasets:[{ data:d.map(x=>x[metricKey]), backgroundColor:palette }] },
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{
         legend:{ position:'bottom', labels:{ font:{family:'Inter', size:10}, color:'#3E4831', usePointStyle:true, boxWidth:8 } },
-        tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=> c.label+': '+fmtCat(c.raw,'money') } }
+        tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=> c.label+': '+fmtCat(c.raw, metricKey==='revenue'?'money':'int') } }
       }
     }
   });
 }
 
 function renderLocationChart(){
+  const metricKey = catalogoMetric;
+  const metricLabel = metricKey==='revenue' ? 'ingresos' : 'pedidos';
+  document.getElementById('locationChartSub').textContent = `Según dirección de envío · por ${metricLabel}`;
   const byState = new Map();
   CATALOGO_DATA.by_location.forEach(l=>{
     if(!byState.has(l.state)) byState.set(l.state, 0);
-    byState.set(l.state, byState.get(l.state) + l.revenue);
+    byState.set(l.state, byState.get(l.state) + l[metricKey]);
   });
-  const d = [...byState.entries()].map(([state,revenue])=>({state,revenue})).sort((a,b)=>b.revenue-a.revenue).slice(0,12);
+  const d = [...byState.entries()].map(([state,val])=>({state,val})).sort((a,b)=>b.val-a.val).slice(0,12);
   const ctx = document.getElementById('locationChart').getContext('2d');
   if(locationChartInst) locationChartInst.destroy();
   locationChartInst = new Chart(ctx, {
     type:'bar',
-    data:{ labels:d.map(x=>x.state), datasets:[{ label:'Ventas', data:d.map(x=>x.revenue), backgroundColor:'#3E4831', borderRadius:5 }] },
+    data:{ labels:d.map(x=>x.state), datasets:[{ label: metricKey==='revenue'?'Ventas':'Pedidos', data:d.map(x=>x.val), backgroundColor:'#3E4831', borderRadius:5 }] },
     options:{
       indexAxis:'y', responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=>fmtCat(c.raw,'money') } } },
+      plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=>fmtCat(c.raw, metricKey==='revenue'?'money':'int') } } },
       scales:{
-        x:{ grid:{color:'rgba(62,72,49,0.08)'}, ticks:{ font:{family:'Inter', size:10}, color:'#566471', callback:(v)=>fmtCat(v,'money') } },
+        x:{ grid:{color:'rgba(62,72,49,0.08)'}, ticks:{ font:{family:'Inter', size:10}, color:'#566471', callback:(v)=>fmtCat(v, metricKey==='revenue'?'money':'int') } },
         y:{ grid:{display:false}, ticks:{ font:{family:'Inter', size:10}, color:'#566471' } }
       }
     }
@@ -3373,11 +3390,24 @@ async function renderCatalogoAll(){
     setCatalogoSyncUI('err', `Shopify — sin conexión al endpoint en vivo (${err.message})`);
   }
   safe(renderKPIsCatalogo, 'kpisCatalogo');
+  renderCatalogoCharts();
+  safe(renderLocationTable, 'locationTable');
+}
+
+function renderCatalogoCharts(){
   safe(renderProductChart, 'productChart');
   safe(renderCategoryChart, 'categoryChart');
   safe(renderLocationChart, 'locationChart');
-  safe(renderLocationTable, 'locationTable');
 }
+
+function setCatalogoMetric(metric){
+  catalogoMetric = metric;
+  document.getElementById('catalogoMetricRevenue').classList.toggle('active', metric==='revenue');
+  document.getElementById('catalogoMetricOrders').classList.toggle('active', metric==='orders');
+  renderCatalogoCharts();
+}
+document.getElementById('catalogoMetricRevenue').addEventListener('click', ()=>setCatalogoMetric('revenue'));
+document.getElementById('catalogoMetricOrders').addEventListener('click', ()=>setCatalogoMetric('orders'));
 
 /* =========================================================
    VISTA: GOOGLE ADS
