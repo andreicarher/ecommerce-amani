@@ -2533,7 +2533,7 @@ async function fetchShopifyDailyRaw(since, until){
   const res = await fetch(`/api/shopify-sales?${params.toString()}`);
   const json = await res.json().catch(()=>({}));
   if(!res.ok || json.error) throw new Error(json.error || ('HTTP ' + res.status));
-  return json.by_day || [];
+  return json; // incluye .by_day y .summary (con el diagnóstico de datos de cliente)
 }
 
 const MES_CORTO_JS = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
@@ -2604,13 +2604,13 @@ async function syncNow() {
   showLiveBanner('');
   try {
     const today = new Date().toISOString().slice(0,10);
-    const [metaDaily, shopifyDaily, adRowsLive] = await Promise.all([
+    const [metaDaily, shopifyResponse, adRowsLive] = await Promise.all([
       fetchMetaDaily(API_LIVE_START, today),
       fetchShopifyDailyRaw(API_LIVE_START, today),
       fetchMetaAdLevelDaily(API_LIVE_START, today),
     ]);
 
-    const liveDaily = buildLiveDailyRows(metaDaily, shopifyDaily);
+    const liveDaily = buildLiveDailyRows(metaDaily, shopifyResponse.by_day || []);
     const liveWeekly = computeWeekly(liveDaily);
     const liveMonthly = computeMonthlyFromDaily(liveDaily);
 
@@ -2632,6 +2632,20 @@ async function syncNow() {
     const now = new Date();
     const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
     setSyncUI('ok', `En vivo (sin Sheet) - sincronizado ${hh}:${mm} - Feb-May congelado, Junio-hoy 100% Meta Ads + Shopify API`);
+
+    // Alerta visible: si Shopify no está autorizando "Protected customer
+    // data", casi todos los pedidos quedan sin numberOfOrders utilizable —
+    // Clientes Nuevos/% /Ingresos salen en 0 para todo el periodo en vivo,
+    // y ya no hay ningún Sheet de respaldo que lo disimule.
+    const pctSinDatos = shopifyResponse.summary && shopifyResponse.summary.pct_sin_datos_cliente;
+    if(pctSinDatos !== undefined && pctSinDatos !== null && pctSinDatos >= 50){
+      showLiveBanner(
+        `⚠️ Shopify no está entregando datos de cliente en ${pctSinDatos.toFixed(0)}% de los pedidos de Junio en adelante ` +
+        `(probablemente falta autorizar "Protected customer data" en tu app de Shopify — ve a Configuración → Apps → tu app → Configuración de la app). ` +
+        `Por eso "Clientes Nuevos", "% Clientes Nuevos" e "Ingresos Clientes Nuevos" salen en 0 para ese periodo — el resto de las métricas (ventas, pedidos, ticket promedio) sí son correctas.`
+      );
+    }
+
     renderEverything();
   } catch (err) {
     console.error('Live sync failed:', err);
