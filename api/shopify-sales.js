@@ -189,12 +189,17 @@ module.exports = async (req, res) => {
       grossTotal += gross;
       netTotal += net;
 
-      const n = order.customer && order.customer.numberOfOrders;
-      // null/undefined = Shopify no autorizó el dato; 0 = imposible en un
+      // OJO — bug real que encontramos en producción: Shopify regresa
+      // numberOfOrders como STRING (ej. "1"), no como número. Una comparación
+      // estricta "=== 1" nunca es verdadera contra un string, así que
+      // convertimos explícitamente antes de comparar nada.
+      const nRaw = order.customer && order.customer.numberOfOrders;
+      const n = (nRaw !== null && nRaw !== undefined && nRaw !== '') ? parseInt(nRaw, 10) : null;
+      // null/NaN = Shopify no autorizó el dato; 0 = imposible en un
       // pedido real, así que también es señal de dato faltante (ver
       // Consideración 2 arriba). Ninguno de los dos casos cuenta como
       // "recurrente" — se excluyen del cálculo por completo.
-      const hasCustomerData = n !== null && n !== undefined && n > 0;
+      const hasCustomerData = n !== null && !isNaN(n) && n > 0;
       if (!hasCustomerData) { ordersWithoutCustomer += 1; }
       const isNew = hasCustomerData && n === 1;
       if (isNew) { newCustomers += 1; newCustomersRevenue += net; }
