@@ -63,8 +63,12 @@ module.exports = async (req, res) => {
     let adAccountId = process.env.PINTEREST_AD_ACCOUNT_ID;
     let autoDiscovered = false;
     if (!adAccountId) {
-      adAccountId = await resolveAdAccountId(TOKEN);
-      autoDiscovered = true;
+      try {
+        adAccountId = await resolveAdAccountId(TOKEN);
+        autoDiscovered = true;
+      } catch (e) {
+        throw new Error('Falló en el paso "descubrir ad_account_id" (GET /ad_accounts): ' + e.message);
+      }
     }
 
     // Traemos por día y por campaña (misma filosofía que Meta/Google Ads):
@@ -86,7 +90,12 @@ module.exports = async (req, res) => {
       level: 'CAMPAIGN',
     });
 
-    const analytics = await pinterestGet(`/ad_accounts/${adAccountId}/campaigns/analytics?${params.toString()}`, TOKEN);
+    let analytics;
+    try {
+      analytics = await pinterestGet(`/ad_accounts/${adAccountId}/campaigns/analytics?${params.toString()}`, TOKEN);
+    } catch (e) {
+      throw new Error(`Falló en el paso "pedir analytics" (GET /ad_accounts/${adAccountId}/campaigns/analytics): ` + e.message);
+    }
 
     res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
     res.status(200).json({
