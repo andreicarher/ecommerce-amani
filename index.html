@@ -205,6 +205,17 @@
   /* ---------- TABLE ---------- */
   .table-wrap{ overflow-x:auto; margin-top:10px; }
   table{ width:100%; border-collapse:collapse; font-size:12.5px; min-width:920px; }
+  #locationTable{ min-width:0; table-layout:fixed; }
+  #locationTable th:nth-child(1), #locationTable td:nth-child(1){ width:24%; }
+  #locationTable th:nth-child(2), #locationTable td:nth-child(2){ width:24%; }
+  #locationTable th:nth-child(3), #locationTable td:nth-child(3),
+  #locationTable th:nth-child(4), #locationTable td:nth-child(4),
+  #locationTable th:nth-child(5), #locationTable td:nth-child(5){ width:17.3%; }
+  #locationTable td, #locationTable th{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .table-pagination{ display:flex; align-items:center; justify-content:center; gap:14px; margin-top:14px; font-size:12.5px; color:var(--blue); }
+  .table-pagination button{ border:1px solid var(--cream-dim); background:#fff; color:var(--dark-green); border-radius:6px; padding:5px 12px; font-size:12.5px; font-family:var(--font-body); cursor:pointer; }
+  .table-pagination button:disabled{ opacity:.35; cursor:default; }
+  .table-pagination button:not(:disabled):hover{ background:var(--cream-dim); }
   thead th{
     text-align:right; font-weight:600; color:var(--blue); text-transform:uppercase;
     font-size:10.5px; letter-spacing:.04em; padding:8px 10px; border-bottom:1px solid var(--line);
@@ -431,6 +442,7 @@
           <tbody id="tableBody"></tbody>
         </table>
       </div>
+      <div class="table-pagination" id="tablePagination"></div>
     </div>
 
   </div>
@@ -492,7 +504,6 @@
           <div class="panel-title">Detalle por Ciudad</div>
           <div class="panel-sub">Clic en un encabezado para ordenar</div>
           <span class="source-badge shopify">Shopify Admin API · En vivo</span>
-          <span class="source-badge shopify">Shopify Admin API · En vivo</span>
         </div>
       </div>
       <div class="table-wrap">
@@ -501,6 +512,7 @@
           <tbody id="locationTableBody"></tbody>
         </table>
       </div>
+      <div class="table-pagination" id="locationTablePagination"></div>
     </div>
 
     <div class="footer-note" style="margin-top:24px;">Fuente: Shopify Admin API, en vivo cada vez que se abre esta pestaña (custom app propia — no depende de mí para actualizarse). Ingresos = suma del total original de cada línea de producto (antes de descuentos), excluyendo órdenes canceladas.</div>
@@ -548,6 +560,7 @@
           <tbody id="dimSourceMediumTableBody"></tbody>
         </table>
       </div>
+      <div class="table-pagination" id="dimSourceMediumTablePagination"></div>
     </div>
 
     <div class="panel">
@@ -564,6 +577,7 @@
           <tbody id="dimCampaignTableBody"></tbody>
         </table>
       </div>
+      <div class="table-pagination" id="dimCampaignTablePagination"></div>
     </div>
 
     <div class="panel">
@@ -580,6 +594,7 @@
           <tbody id="dimSourceTableBody"></tbody>
         </table>
       </div>
+      <div class="table-pagination" id="dimSourceTablePagination"></div>
     </div>
 
     <div class="panel">
@@ -596,6 +611,7 @@
           <tbody id="dimContentTableBody"></tbody>
         </table>
       </div>
+      <div class="table-pagination" id="dimContentTablePagination"></div>
     </div>
 
     <div class="footer-note">Todo en vivo — Google Analytics 4 Data API. Métricas de cada tabla: Visitantes, Sesiones, Tasa de Conversión, Tasa de Add to Cart, Tasa de Rebote, Duración Media, Checkouts Iniciados y Completados — mismas definiciones que en Engagement Web. Para el desempeño de campañas de Meta Ads específicamente, ve a la pestaña "Meta Ads".</div>
@@ -690,6 +706,7 @@
           <tbody id="googleAdsCampaignTableBody"></tbody>
         </table>
       </div>
+      <div class="table-pagination" id="googleAdsCampaignTablePagination"></div>
     </div>
 
     <div class="two-col">
@@ -729,6 +746,7 @@
           <tbody id="googleAdsGeoTableBody"></tbody>
         </table>
       </div>
+      <div class="table-pagination" id="googleAdsGeoTablePagination"></div>
     </div>
 
     <div class="panel">
@@ -745,6 +763,7 @@
           <tbody id="googleAdsSearchTermsTableBody"></tbody>
         </table>
       </div>
+      <div class="table-pagination" id="googleAdsSearchTermsTablePagination"></div>
       <div class="footer-note" style="text-align:left; margin-top:8px;">Solo aplica a campañas de Search — si toda tu cuenta es Performance Max o Display, esta tabla va a salir vacía (Google no expone el término de búsqueda para esos tipos de campaña).</div>
     </div>
 
@@ -762,6 +781,7 @@
           <tbody id="googleAdsKeywordsTableBody"></tbody>
         </table>
       </div>
+      <div class="table-pagination" id="googleAdsKeywordsTablePagination"></div>
     </div>
 
     <div class="panel">
@@ -778,6 +798,7 @@
           <tbody id="googleAdsAdsTableBody"></tbody>
         </table>
       </div>
+      <div class="table-pagination" id="googleAdsAdsTablePagination"></div>
     </div>
 
     <div class="footer-note">En vivo — Google Ads API. El costo se reporta en la moneda de la cuenta de Google Ads. ROAS = Valor de Conversiones ÷ Inversión.</div>
@@ -858,6 +879,7 @@
           <tbody id="engagementTableBody"></tbody>
         </table>
       </div>
+      <div class="table-pagination" id="engagementTablePagination"></div>
     </div>
 
     <div class="footer-note">Nota: "Sesiones" aquí es tráfico total del sitio (orgánico + pagado + directo). No confundir con "Visitas Web" del Resumen General, que solo mide clics atribuidos a Meta Ads. En vivo — Google Analytics 4 Data API.</div>
@@ -1760,12 +1782,14 @@ function renderTableHead(){
     th.textContent = c.label + (sortState.col===c.key ? (sortState.dir>0?' ▲':' ▼') : '');
     th.onclick = ()=>{
       if(sortState.col===c.key) sortState.dir *= -1; else { sortState.col=c.key; sortState.dir=1; }
+      weeklyTablePage = 0;
       renderTable();
     };
     head.appendChild(th);
   });
 }
 
+let weeklyTablePage = 0;
 function renderTable(){
   renderTableHead();
   let rows = [...getFilteredWeekly()];
@@ -1777,9 +1801,11 @@ function renderTable(){
     bv = bv===null||bv===undefined ? -Infinity : bv;
     return sortState.dir * (av-bv);
   });
+  weeklyTablePage = renderTablePagination('tablePagination', rows.length, weeklyTablePage, (p)=>{ weeklyTablePage=p; renderTable(); }, 'semanas');
+  const pageRows = paginateRows(rows, weeklyTablePage);
   const body = document.getElementById('tableBody');
   body.innerHTML = '';
-  rows.forEach(r=>{
+  pageRows.forEach(r=>{
     const tr = document.createElement('tr');
     tr.innerHTML = TABLE_COLS.map(c=>{
       if(c.key==='mes') return `<td><span class="month-tag">${r.mes}</span></td>`;
@@ -2045,6 +2071,7 @@ const TRAFFIC_DIM_COLS = [
   {key:'checkout_completado', label:'Checkout Comp.', fmt:'int'},
 ];
 const TRAFFIC_DIM_SORT = {};
+const TRAFFIC_DIM_PAGE = {};
 const TRAFFIC_DIM_ROWS = {};
 
 async function fetchDimensionBreakdown(dimensionName, range){
@@ -2067,6 +2094,7 @@ function renderDimensionTable(tableId){
     th.onclick = ()=>{
       if(sortState.key===c.key) sortState.dir *= -1; else { sortState.key=c.key; sortState.dir = c.key==='dim'?1:-1; }
       TRAFFIC_DIM_SORT[tableId] = { ...sortState };
+      TRAFFIC_DIM_PAGE[tableId] = 0;
       renderDimensionTable(tableId);
     };
     head.appendChild(th);
@@ -2076,9 +2104,12 @@ function renderDimensionTable(tableId){
     if(typeof av==='string') return sortState.dir*av.localeCompare(bv);
     return sortState.dir*((av||0)-(bv||0));
   });
+  const page = renderTablePagination(tableId+'Pagination', sorted.length, TRAFFIC_DIM_PAGE[tableId] || 0, (p)=>{ TRAFFIC_DIM_PAGE[tableId]=p; renderDimensionTable(tableId); }, 'filas');
+  TRAFFIC_DIM_PAGE[tableId] = page;
+  const pageRows = paginateRows(sorted, page);
   const body = document.getElementById(tableId+'Body');
   body.innerHTML = '';
-  sorted.forEach(r=>{
+  pageRows.forEach(r=>{
     const tr = document.createElement('tr');
     tr.innerHTML = TRAFFIC_DIM_COLS.map(c=> c.key==='dim' ? `<td>${r.dim}</td>` : `<td>${fmtEngagement(r[c.key], c.fmt)}</td>`).join('');
     body.appendChild(tr);
@@ -2913,12 +2944,15 @@ function fmtEngagement(v, fmt){
   return fmtVal(v, fmt);
 }
 
+let engagementTablePage = 0;
 function renderEngagementTable(){
   const head = document.getElementById('engagementTableHead');
   head.innerHTML = ENGAGEMENT_COLS.map(c=>`<th>${c.label}</th>`).join('');
+  engagementTablePage = renderTablePagination('engagementTablePagination', ENGAGEMENT_MONTHLY.length, engagementTablePage, (p)=>{ engagementTablePage=p; renderEngagementTable(); }, 'meses');
+  const pageRows = paginateRows(ENGAGEMENT_MONTHLY, engagementTablePage);
   const body = document.getElementById('engagementTableBody');
   body.innerHTML = '';
-  ENGAGEMENT_MONTHLY.forEach(r=>{
+  pageRows.forEach(r=>{
     const tr = document.createElement('tr');
     tr.innerHTML = ENGAGEMENT_COLS.map(c=>{
       if(c.key==='mes') return `<td><span class="month-tag">${r.mes}</span></td>`;
@@ -3440,7 +3474,38 @@ function renderLocationChart(){
   });
 }
 
+/* ---------- PAGINACIÓN REUTILIZABLE PARA TABLAS LARGAS ---------- */
+const TABLE_PAGE_SIZE = 10;
+// Pinta los controles de paginación en containerId y regresa la página ya
+// acotada al rango válido (por si la data cambió de tamaño desde la última
+// vez, ej. al cambiar de periodo o de orden).
+function renderTablePagination(containerId, totalRows, currentPage, onPageChange, noun){
+  const totalPages = Math.max(1, Math.ceil(totalRows / TABLE_PAGE_SIZE));
+  const page = Math.min(currentPage, totalPages - 1);
+  const pag = document.getElementById(containerId);
+  if(pag){
+    pag.innerHTML = '';
+    const prevBtn = document.createElement('button');
+    prevBtn.textContent = '← Anterior';
+    prevBtn.disabled = page === 0;
+    prevBtn.onclick = ()=> onPageChange(page - 1);
+    const label = document.createElement('span');
+    label.textContent = `Página ${page+1} de ${totalPages} · ${totalRows} ${noun || 'filas'}`;
+    const nextBtn = document.createElement('button');
+    nextBtn.textContent = 'Siguiente →';
+    nextBtn.disabled = page >= totalPages - 1;
+    nextBtn.onclick = ()=> onPageChange(page + 1);
+    pag.appendChild(prevBtn); pag.appendChild(label); pag.appendChild(nextBtn);
+  }
+  return page;
+}
+function paginateRows(rows, page){
+  return rows.slice(page*TABLE_PAGE_SIZE, (page+1)*TABLE_PAGE_SIZE);
+}
+
+
 let locationTableSort = { key:'revenue', dir:-1 };
+let locationTablePage = 0;
 const LOCATION_TABLE_COLS = [
   {key:'state', label:'Estado'}, {key:'city', label:'Ciudad'},
   {key:'revenue', label:'Ventas', fmt:'money'}, {key:'quantity', label:'Unidades', fmt:'int'}, {key:'orders', label:'Pedidos', fmt:'int'},
@@ -3453,6 +3518,7 @@ function renderLocationTable(){
     th.textContent = c.label + (locationTableSort.key===c.key ? (locationTableSort.dir>0?' ▲':' ▼') : '');
     th.onclick = ()=>{
       if(locationTableSort.key===c.key) locationTableSort.dir *= -1; else locationTableSort = { key:c.key, dir: (c.key==='state'||c.key==='city')?1:-1 };
+      locationTablePage = 0;
       renderLocationTable();
     };
     head.appendChild(th);
@@ -3462,11 +3528,14 @@ function renderLocationTable(){
     if(typeof av==='string') return locationTableSort.dir*av.localeCompare(bv);
     return locationTableSort.dir*((av||0)-(bv||0));
   });
+  locationTablePage = renderTablePagination('locationTablePagination', rows.length, locationTablePage, (p)=>{ locationTablePage=p; renderLocationTable(); }, 'ciudades');
+  const pageRows = paginateRows(rows, locationTablePage);
+
   const body = document.getElementById('locationTableBody');
   body.innerHTML = '';
-  rows.forEach(r=>{
+  pageRows.forEach(r=>{
     const tr = document.createElement('tr');
-    tr.innerHTML = LOCATION_TABLE_COLS.map(c=> (c.key==='state'||c.key==='city') ? `<td>${r[c.key]}</td>` : `<td>${fmtCat(r[c.key], c.fmt)}</td>`).join('');
+    tr.innerHTML = LOCATION_TABLE_COLS.map(c=> (c.key==='state'||c.key==='city') ? `<td title="${r[c.key]}">${r[c.key]}</td>` : `<td>${fmtCat(r[c.key], c.fmt)}</td>`).join('');
     body.appendChild(tr);
   });
 }
@@ -3602,6 +3671,7 @@ function renderGoogleAdsMonthlyChart(){
 }
 
 let googleAdsCampaignSort = { key:'cost', dir:-1 };
+let googleAdsCampaignPage = 0;
 const GOOGLE_ADS_CAMPAIGN_COLS = [
   {key:'campaign_name', label:'Campaña'},
   {key:'channel_type', label:'Tipo'},
@@ -3639,6 +3709,7 @@ function renderGoogleAdsCampaignTable(){
     th.onclick = ()=>{
       if(googleAdsCampaignSort.key===c.key) googleAdsCampaignSort.dir *= -1;
       else googleAdsCampaignSort = { key:c.key, dir: (c.key==='campaign_name'||c.key==='channel_type')?1:-1 };
+      googleAdsCampaignPage = 0;
       renderGoogleAdsCampaignTable();
     };
     head.appendChild(th);
@@ -3649,9 +3720,11 @@ function renderGoogleAdsCampaignTable(){
     const an = av===null||av===undefined?-Infinity:av, bn = bv===null||bv===undefined?-Infinity:bv;
     return googleAdsCampaignSort.dir*(an-bn);
   });
+  googleAdsCampaignPage = renderTablePagination('googleAdsCampaignTablePagination', sorted.length, googleAdsCampaignPage, (p)=>{ googleAdsCampaignPage=p; renderGoogleAdsCampaignTable(); }, 'campañas');
+  const pageRows = paginateRows(sorted, googleAdsCampaignPage);
   const body = document.getElementById('googleAdsCampaignTableBody');
   body.innerHTML = '';
-  sorted.forEach(r=>{
+  pageRows.forEach(r=>{
     const tr = document.createElement('tr');
     tr.innerHTML = GOOGLE_ADS_CAMPAIGN_COLS.map(c=>{
       if(c.key==='campaign_name') return `<td>${r.campaign_name}</td>`;
@@ -3772,6 +3845,7 @@ const GOOGLE_ADS_ADS_COLS = [
 ];
 
 const GOOGLE_ADS_TABLE_SORT = {};
+const GOOGLE_ADS_TABLE_PAGE = {};
 function fmtGoogleAdsCell(v, fmt){
   if(v===null||v===undefined||v===''||isNaN(v)&&fmt) {
     if(fmt) return '—';
@@ -3808,6 +3882,7 @@ function renderGoogleAdsGenericTable(tableId, rawRows, cols){
     th.onclick = ()=>{
       if(sortState.key===c.key) sortState.dir *= -1; else { sortState.key=c.key; sortState.dir = c.fmt?-1:1; }
       GOOGLE_ADS_TABLE_SORT[tableId] = { ...sortState };
+      GOOGLE_ADS_TABLE_PAGE[tableId] = 0;
       renderGoogleAdsGenericTable(tableId, rawRows, cols);
     };
     head.appendChild(th);
@@ -3817,10 +3892,12 @@ function renderGoogleAdsGenericTable(tableId, rawRows, cols){
     if(typeof av==='string') return sortState.dir*String(av||'').localeCompare(String(bv||''));
     const an = av===null||av===undefined?-Infinity:av, bn = bv===null||bv===undefined?-Infinity:bv;
     return sortState.dir*(an-bn);
-  });
+  }).slice(0,200); // tope de seguridad para no saturar la vista con cola larga (ej. "(not set)")
+  const page = renderTablePagination(tableId+'Pagination', sorted.length, GOOGLE_ADS_TABLE_PAGE[tableId] || 0, (p)=>{ GOOGLE_ADS_TABLE_PAGE[tableId]=p; renderGoogleAdsGenericTable(tableId, rawRows, cols); }, 'filas');
+  GOOGLE_ADS_TABLE_PAGE[tableId] = page;
   const body = document.getElementById(tableId+'Body');
   body.innerHTML = '';
-  sorted.slice(0,200).forEach(r=>{
+  paginateRows(sorted, page).forEach(r=>{
     const tr = document.createElement('tr');
     tr.innerHTML = cols.map(c=> `<td>${fmtGoogleAdsCell(r[c.key], c.fmt)}</td>`).join('');
     body.appendChild(tr);
