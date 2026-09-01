@@ -27,6 +27,25 @@ async function shopifyGraphQL(domain, token, query, variables) {
   return json.data;
 }
 
+// Bug real que encontramos comparando contra un export de Shopify Analytics:
+// Shopify interpreta las fechas de "created_at" en las búsquedas usando la
+// zona horaria DE LA TIENDA, no UTC — mientras que nuestro corte de fecha se
+// construía asumiendo UTC. Resultado: pedidos de la madrugada se colaban al
+// día equivocado (vimos un pedido del 1 de septiembre aparecer dentro de una
+// consulta de agosto). La corrección: pedimos la zona horaria real de la
+// tienda y calculamos NOSOTROS la fecha local de cada pedido, en vez de
+// confiar en cómo Shopify interpreta las fechas del lado de la búsqueda.
+async function fetchShopTimezone(domain, token) {
+  const data = await shopifyGraphQL(domain, token, `query { shop { ianaTimezone } }`);
+  return (data.shop && data.shop.ianaTimezone) || 'America/Mexico_City';
+}
+
+function localDateString(isoDateTime, timeZone) {
+  // 'en-CA' da formato YYYY-MM-DD directo, cómodo para comparar como texto.
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(new Date(isoDateTime));
+}
+
 const ORDERS_QUERY = `
   query GetOrders($cursor: String, $searchQuery: String) {
     orders(first: 100, after: $cursor, query: $searchQuery, sortKey: CREATED_AT) {
@@ -90,16 +109,28 @@ module.exports = async (req, res) => {
   const since = req.query.since; // 'YYYY-MM-DD'
   const until = req.query.until; // 'YYYY-MM-DD' (inclusive)
 
+  // Ensanchamos el margen de la búsqueda en Shopify 1 día de cada lado — es
+  // solo una red de seguridad para no perder pedidos frontera por la
+  // diferencia de huso horario explicada arriba. El filtro preciso de
+  // verdad ocurre después, con la fecha local real de cada pedido.
   let searchQuery = '-status:cancelled';
   if (since && until) {
+    const sinceDate = new Date(since + 'T00:00:00Z');
+    sinceDate.setUTCDate(sinceDate.getUTCDate() - 1);
     const untilDate = new Date(until + 'T00:00:00Z');
-    untilDate.setUTCDate(untilDate.getUTCDate() + 1);
-    const untilExclusive = untilDate.toISOString().slice(0, 10);
-    searchQuery += ` created_at:>='${since}' created_at:<'${untilExclusive}'`;
+    untilDate.setUTCDate(untilDate.getUTCDate() + 2);
+    searchQuery += ` created_at:>='${sinceDate.toISOString().slice(0, 10)}' created_at:<'${untilDate.toISOString().slice(0, 10)}'`;
   }
 
   try {
-    const orders = await fetchAllOrders(DOMAIN, TOKEN, searchQuery);
+    const rawOrders = await fetchAllOrders(DOMAIN, TOKEN, searchQuery);
+    const shopTimezone = await fetchShopTimezone(DOMAIN, TOKEN);
+    // Le calculamos la fecha local real a cada pedido con la zona horaria de
+    // la tienda, y filtramos con ESO — no con lo que Shopify haya decidido
+    // incluir en la búsqueda (que trajimos con margen de sobra a propósito).
+    const orders = rawOrders
+      .map((o) => ({ ...o, localDate: localDateString(o.createdAt, shopTimezone) }))
+      .filter((o) => (!since || o.localDate >= since) && (!until || o.localDate <= until));
 
     const byProduct = new Map();
     const byCategory = new Map();
@@ -231,7 +262,7 @@ module.exports = async (req, res) => {
 
       // Mes/día por fecha de CREACIÓN del pedido (Consideración 4) — no por
       // fecha de pago ni de envío.
-      const day = (order.createdAt || '').slice(0, 10);
+      const day = order.localDate;
       if (day) {
         if (!byDay.has(day)) byDay.set(day, { date: day, ventas_totales_shopify: 0, ventas_netas_shopify: 0, pedidos_shopify: 0, clientes_nuevos: 0, ingresos_clientes_nuevos: 0 });
         const d = byDay.get(day);
