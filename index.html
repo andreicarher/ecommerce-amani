@@ -1651,13 +1651,13 @@ function renderNewCustomersChart(){
           type:'bar', label:'Clientes Nuevos',
           data: months.map(m=>m.clientes_nuevos),
           backgroundColor: months.map(m=> monthOverlapsRange(m.mes, currentRange) ? '#B67C4D' : '#6FA967'),
-          borderRadius:6, maxBarThickness:38, yAxisID:'y',
+          borderRadius:6, maxBarThickness:38, yAxisID:'y', order:2,
         },
         {
           type:'line', label:'% Clientes Nuevos',
           data: months.map(m=>m.pct_clientes_nuevos),
           borderColor:'#566471', borderWidth:2, pointRadius:3,
-          yAxisID:'y1', tension:.3,
+          yAxisID:'y1', tension:.3, order:1,
         }
       ]
     },
@@ -2156,12 +2156,12 @@ function renderAdsAtcChart(){
         {
           type:'bar', label:'Add to Carts (#)',
           data: totals.map(t=>t.atc),
-          backgroundColor:'#6FA967', borderRadius:6, maxBarThickness:40, yAxisID:'y',
+          backgroundColor:'#6FA967', borderRadius:6, maxBarThickness:40, yAxisID:'y', order:2,
         },
         {
           type:'line', label:'Valor ATC ($)',
           data: totals.map(t=>t.atc_value),
-          borderColor:'#B67C4D', borderWidth:2, pointRadius:3, tension:.3, yAxisID:'y1',
+          borderColor:'#B67C4D', borderWidth:2, pointRadius:3, tension:.3, yAxisID:'y1', order:1,
         }
       ]
     },
@@ -2940,9 +2940,9 @@ function renderCrossRefChart(){
     data:{
       labels: rows.map(r=>r.mes.split(' ')[0].slice(0,3)+' '+r.mes.split(' ')[1].slice(2)),
       datasets:[
-        { type:'bar', label:'Sesiones Totales', data: rows.map(r=>r.sesiones), backgroundColor:'#3E483188', borderRadius:6, maxBarThickness:34, yAxisID:'y' },
-        { type:'bar', label:'Sesiones vía Meta Ads (LPV)', data: rows.map(r=>r.meta_lpv), backgroundColor:'#6FA967', borderRadius:6, maxBarThickness:34, yAxisID:'y' },
-        { type:'line', label:'% Atribuible a Meta', data: rows.map(r=>r.pct_atribuible_meta), borderColor:'#B0503A', borderWidth:2, pointRadius:3, cubicInterpolationMode:'monotone', clip:false, yAxisID:'y1' }
+        { type:'bar', label:'Sesiones Totales', data: rows.map(r=>r.sesiones), backgroundColor:'#3E483188', borderRadius:6, maxBarThickness:34, yAxisID:'y', order:2 },
+        { type:'bar', label:'Sesiones vía Meta Ads (LPV)', data: rows.map(r=>r.meta_lpv), backgroundColor:'#6FA967', borderRadius:6, maxBarThickness:34, yAxisID:'y', order:2 },
+        { type:'line', label:'% Atribuible a Meta', data: rows.map(r=>r.pct_atribuible_meta), borderColor:'#B0503A', borderWidth:2, pointRadius:3, cubicInterpolationMode:'monotone', clip:false, yAxisID:'y1', order:1 }
       ]
     },
     options:{
@@ -3046,8 +3046,8 @@ function renderAgeChart(){
     data:{
       labels: d.map(x=>x.age),
       datasets:[
-        {type:'bar', label:'Inversión', data:d.map(x=>x.spend), backgroundColor:'#B67C4D', borderRadius:6, yAxisID:'y'},
-        {type:'line', label:'ROAS', data:d.map(x=>x.roas), borderColor:'#3E4831', borderWidth:2, pointRadius:4, yAxisID:'y1', spanGaps:true},
+        {type:'bar', label:'Inversión', data:d.map(x=>x.spend), backgroundColor:'#B67C4D', borderRadius:6, yAxisID:'y', order:2},
+        {type:'line', label:'ROAS', data:d.map(x=>x.roas), borderColor:'#3E4831', borderWidth:2, pointRadius:4, yAxisID:'y1', spanGaps:true, order:1},
       ]
     },
     options:{
@@ -3582,8 +3582,8 @@ function renderGoogleAdsMonthlyChart(){
     data:{
       labels,
       datasets:[
-        { type:'bar', label:'Inversión', data: months.map(ym=>byMonth.get(ym).cost), backgroundColor:'#4285F4', borderRadius:6, maxBarThickness:34, yAxisID:'y' },
-        { type:'line', label:'Valor de Conversiones', data: months.map(ym=>byMonth.get(ym).conversions_value), borderColor:'#34A853', borderWidth:2, pointRadius:3, cubicInterpolationMode:'monotone', yAxisID:'y1' },
+        { type:'bar', label:'Inversión', data: months.map(ym=>byMonth.get(ym).cost), backgroundColor:'#4285F4', borderRadius:6, maxBarThickness:34, yAxisID:'y', order:2 },
+        { type:'line', label:'Valor de Conversiones', data: months.map(ym=>byMonth.get(ym).conversions_value), borderColor:'#34A853', borderWidth:2, pointRadius:3, cubicInterpolationMode:'monotone', yAxisID:'y1', order:1 },
       ]
     },
     options:{
