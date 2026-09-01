@@ -38,8 +38,8 @@ const ORDERS_QUERY = `
           test
           shippingAddress { city province provinceCode countryCodeV2 }
           totalPriceSet { shopMoney { amount } }
-          currentTotalPriceSet { shopMoney { amount } }
-          customer { numberOfOrders }
+          currentSubtotalPriceSet { shopMoney { amount } }
+          customer { id numberOfOrders }
           lineItems(first: 100) {
             edges {
               node {
@@ -147,61 +147,86 @@ module.exports = async (req, res) => {
     // CLIENTES NUEVOS VS RECURRENTES — lógica y consideraciones
     // ==========================================================================
     // Lógica base: un pedido es de "cliente nuevo" si es el PRIMER pedido de
-    // la historia de ese cliente. Usamos customer.numberOfOrders (Admin API
-    // GraphQL): si === 1, es nuevo; si es 2+, es recurrente.
+    // la historia de ese cliente.
     //
-    // Consideración 1 — EL CONTEO ES "A DÍA DE HOY", NO "AL MOMENTO DEL PEDIDO".
-    // numberOfOrders es un contador que vive en el cliente, no en el pedido —
-    // refleja su total de pedidos AHORA, cuando corremos este reporte, sin
-    // importar de qué mes estemos hablando. Si alguien compró en marzo y
-    // volvió a comprar en junio, HOY ese cliente tiene numberOfOrders=2 — así
-    // que si generamos (o regeneramos) el reporte de marzo después de junio,
-    // ese pedido de marzo YA NO se ve como "nuevo", aunque en su momento sí lo
-    // fue. Efecto práctico: los meses recientes son los más precisos; los
-    // meses viejos SUBESTIMAN ligeramente cuántos "nuevos" hubo en su
-    // momento, porque algunos de esos clientes ya volvieron a comprar desde
-    // entonces. Esto no tiene arreglo sin guardar el conteo histórico
-    // pedido-por-pedido (algo que Shopify no expone), así que es una
-    // limitación conocida y aceptada, no un bug.
+    // CORRECCIÓN (encontrada comparando contra el export de Shopify
+    // Analytics): antes revisábamos customer.numberOfOrders de forma aislada
+    // por pedido — si un cliente compraba DOS veces dentro de la misma
+    // ventana consultada (ej. el 5 y el 20 de agosto), para cuando corremos
+    // el reporte numberOfOrders ya es 2 para AMBOS pedidos, y el método viejo
+    // marcaba los dos como recurrentes, aunque el del 5 de agosto sí fue,
+    // en efecto, su primer pedido de toda la vida. Shopify Analytics sí lo
+    // identifica bien porque compara fechas, no solo un contador.
+    //
+    // Arreglo: agrupamos los pedidos por cliente, y comparamos cuántos
+    // pedidos de ese cliente vemos DENTRO de esta ventana contra su
+    // numberOfOrders (total de por vida, a hoy):
+    //   - Si numberOfOrders <= pedidos-vistos-en-la-ventana: TODA su
+    //     historia de compras cae dentro de esta ventana -> el más antiguo
+    //     de ellos es su primer pedido real -> se marca "nuevo".
+    //   - Si numberOfOrders > pedidos-vistos-en-la-ventana: tiene pedidos
+    //     más viejos fuera de la ventana -> ninguno de los que vemos aquí es
+    //     su primer pedido -> todos son recurrentes.
+    //
+    // Consideración 1 — Esto sigue siendo "a día de hoy": si el cliente del
+    // ejemplo anterior vuelve a comprar OTRA vez el mes que entra, y se
+    // regenera el reporte de agosto después de eso, numberOfOrders ya sería
+    // 3 y agosto tendría 2 pedidos vistos -> como 3 > 2, ambos pedidos de
+    // agosto pasarían a verse como recurrentes, aunque el del 5 de agosto
+    // siga siendo cronológicamente su primer pedido real. No tiene arreglo
+    // sin que Shopify exponga el historial pedido-por-pedido con fecha —
+    // es una limitación conocida y aceptada, no un bug. Los meses/periodos
+    // más recientes son siempre los más precisos.
     //
     // Consideración 2 — NUNCA ASUMIMOS "RECURRENTE" CUANDO FALTA EL DATO.
-    // Si numberOfOrders viene null, undefined, O EN 0 — eso es evidencia de
-    // que Shopify no nos dio el dato real (por falta del permiso "Protected
-    // customer data", o por checkout de invitado), NO de que el cliente sea
-    // recurrente. Un pedido real, por definición, es como mínimo el pedido
-    // #1 de ese cliente — un 0 es matemáticamente imposible si el pedido
-    // existe, así que un 0 es tan sospechoso como un null. Estos casos se
-    // cuentan aparte ("sin datos de cliente") y se EXCLUYEN del cálculo de
-    // nuevos/recurrentes — nunca se cuentan como recurrentes por default.
+    // Si el cliente no viene identificado, o numberOfOrders viene null,
+    // undefined o en 0 (imposible en un pedido real) — se cuenta aparte
+    // ("sin datos de cliente") y se EXCLUYE del cálculo, nunca se cuenta
+    // como recurrente por default.
     //
     // Consideración 3 — Ya excluimos pedidos cancelados (query de búsqueda
     // "-status:cancelled") y pedidos de prueba (filtro post-fetch por
-    // order.test) antes de llegar a este punto — ninguno de los dos es una
-    // venta real ni un cliente adquirido de verdad.
+    // order.test) antes de llegar a este punto.
     //
-    // Consideración 4 — El mes se asigna por order.createdAt (fecha de
+    // Consideración 4 — El mes/día se asigna por order.createdAt (fecha de
     // CREACIÓN del pedido), explícitamente NO por fecha de pago ni de envío.
-    let grossTotal = 0, netTotal = 0, newCustomers = 0, newCustomersRevenue = 0, ordersWithoutCustomer = 0;
+    const ordersByCustomer = new Map(); // customerId -> { lifetimeOrders, orders:[...] }
+    let ordersWithoutCustomer = 0;
+    orders.forEach((order) => {
+      const custId = order.customer && order.customer.id;
+      const nRaw = order.customer && order.customer.numberOfOrders;
+      // OJO — bug real que encontramos en producción: Shopify regresa
+      // numberOfOrders como STRING (ej. "1"), no como número. Comparar
+      // directo nunca da verdadero contra un string, así que convertimos
+      // explícitamente antes de comparar nada.
+      const n = (nRaw !== null && nRaw !== undefined && nRaw !== '') ? parseInt(nRaw, 10) : null;
+      const hasCustomerData = !!custId && n !== null && !isNaN(n) && n > 0;
+      if (!hasCustomerData) { ordersWithoutCustomer += 1; return; }
+      if (!ordersByCustomer.has(custId)) ordersByCustomer.set(custId, { lifetimeOrders: n, orders: [] });
+      ordersByCustomer.get(custId).orders.push(order);
+    });
+
+    const newOrderIds = new Set();
+    for (const { lifetimeOrders, orders: custOrders } of ordersByCustomer.values()) {
+      if (lifetimeOrders <= custOrders.length) {
+        const earliest = [...custOrders].sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''))[0];
+        newOrderIds.add(earliest.id);
+      }
+    }
+
+    let grossTotal = 0, netTotal = 0, newCustomers = 0, newCustomersRevenue = 0;
     const byDay = new Map(); // 'YYYY-MM-DD' -> { ventas_totales, ventas_netas, pedidos, clientes_nuevos, ingresos_clientes_nuevos }
     orders.forEach((order) => {
       const gross = parseFloat((order.totalPriceSet && order.totalPriceSet.shopMoney && order.totalPriceSet.shopMoney.amount) || 0);
-      const net = parseFloat((order.currentTotalPriceSet && order.currentTotalPriceSet.shopMoney && order.currentTotalPriceSet.shopMoney.amount) || 0);
+      // "Ventas Netas" = Ventas Brutas - Descuentos - Devoluciones, SIN
+      // envío ni impuestos — currentSubtotalPriceSet ya excluye ambos y
+      // refleja descuentos/devoluciones aplicados, calzando con la
+      // definición de Shopify Analytics (confirmado contra el export real).
+      const net = parseFloat((order.currentSubtotalPriceSet && order.currentSubtotalPriceSet.shopMoney && order.currentSubtotalPriceSet.shopMoney.amount) || 0);
       grossTotal += gross;
       netTotal += net;
 
-      // OJO — bug real que encontramos en producción: Shopify regresa
-      // numberOfOrders como STRING (ej. "1"), no como número. Una comparación
-      // estricta "=== 1" nunca es verdadera contra un string, así que
-      // convertimos explícitamente antes de comparar nada.
-      const nRaw = order.customer && order.customer.numberOfOrders;
-      const n = (nRaw !== null && nRaw !== undefined && nRaw !== '') ? parseInt(nRaw, 10) : null;
-      // null/NaN = Shopify no autorizó el dato; 0 = imposible en un
-      // pedido real, así que también es señal de dato faltante (ver
-      // Consideración 2 arriba). Ninguno de los dos casos cuenta como
-      // "recurrente" — se excluyen del cálculo por completo.
-      const hasCustomerData = n !== null && !isNaN(n) && n > 0;
-      if (!hasCustomerData) { ordersWithoutCustomer += 1; }
-      const isNew = hasCustomerData && n === 1;
+      const isNew = newOrderIds.has(order.id);
       if (isNew) { newCustomers += 1; newCustomersRevenue += net; }
 
       // Mes/día por fecha de CREACIÓN del pedido (Consideración 4) — no por
