@@ -122,6 +122,18 @@ module.exports = async (req, res) => {
       SELECT ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type, campaign.name, ${metricsFields}
       FROM ad_group_ad WHERE ${dateFilter}
       ORDER BY metrics.cost_micros DESC LIMIT 100`,
+    // Desglose de funnel por acción de conversión (Page View / View Item /
+    // Add To Cart / Begin Checkout / Purchase) — confirmamos que este
+    // desglose existe revisando la pestaña Query_GoogleAds del Sheet
+    // histórico, que ya lo traía vía segments.conversion_action_name.
+    // Usamos all_conversions (no "conversions" a secas) porque es la métrica
+    // que efectivamente trae valores por cada acción individual — con
+    // "conversions" algunas acciones pueden salir en 0 según cómo esté
+    // configurada la atribución de la cuenta.
+    funnel: `
+      SELECT segments.date, campaign.id, campaign.name, segments.conversion_action_name,
+        metrics.all_conversions, metrics.all_conversions_value
+      FROM campaign WHERE ${dateFilter}`,
   };
 
   if (!QUERIES[view]) {
@@ -200,6 +212,15 @@ module.exports = async (req, res) => {
         ad_type: r.adGroupAd && r.adGroupAd.ad && r.adGroupAd.ad.type,
         campaign_name: r.campaign && r.campaign.name,
         ...baseMetrics(r),
+      }));
+    } else if (view === 'funnel') {
+      rows = results.map((r) => ({
+        date: r.segments && r.segments.date,
+        campaign_id: r.campaign && r.campaign.id,
+        campaign_name: r.campaign && r.campaign.name,
+        conversion_action_name: r.segments && r.segments.conversionActionName,
+        all_conversions: parseFloat((r.metrics && r.metrics.allConversions) || 0),
+        all_conversions_value: parseFloat((r.metrics && r.metrics.allConversionsValue) || 0),
       }));
     }
 
