@@ -1952,7 +1952,7 @@ function trafficTotals(rows){
     clicks: sum(rows,'clicks'),
     lpv: sum(rows,'lpv'),
     atc: sum(rows,'atc'),
-    checkouts: sum(rows,'checkouts'),
+    checkouts: sum(rows,'checkout_iniciado'),
     purchases: sum(rows,'purchases'),
     purchase_value,
     roas: cost>0 ? purchase_value/cost : null,
