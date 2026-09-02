@@ -252,6 +252,8 @@
   }
   .camp-row:last-child{ border-bottom:none; }
   .camp-row.head{ background:var(--cream-dim); font-weight:700; color:var(--blue); text-transform:uppercase; font-size:10px; letter-spacing:.03em; }
+  .camp-row.total{ font-weight:700; color:var(--dark-green); border-top:2px solid var(--cream-dim); }
+  table tfoot td{ font-weight:700; color:var(--dark-green); border-top:2px solid var(--cream-dim); }
   .camp-row div:not(:first-child){ text-align:right; }
   .camp-name{ color:var(--dark-green); font-weight:600; }
 
@@ -661,6 +663,17 @@
       </div>
     </div>
 
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Funnel de Conversión</div>
+          <div class="panel-sub">Visitas a la Página → Add to Cart → Checkout → Compra</div>
+          <span class="source-badge meta">Meta Ads API · En vivo</span>
+        </div>
+      </div>
+      <div id="metaFunnelBox"></div>
+    </div>
+
     <div class="kpi-section-label">Detalle por objetivo — clic para expandir campañas</div>
     <div id="objGroups"></div>
 
@@ -695,6 +708,17 @@
     <div class="panel">
       <div class="panel-head">
         <div>
+          <div class="panel-title">Funnel de Conversión</div>
+          <div class="panel-sub">Visitas a la Página → Add to Cart → Checkout → Compra</div>
+          <span class="source-badge ga4">Google Ads API · En vivo</span>
+        </div>
+      </div>
+      <div id="googleAdsFunnelBox"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
           <div class="panel-title">Desempeño por Campaña</div>
           <div class="panel-sub">Clic en un encabezado para ordenar</div>
           <span class="source-badge ga4">Google Ads API · En vivo</span>
@@ -704,6 +728,7 @@
         <table id="googleAdsCampaignTable">
           <thead><tr id="googleAdsCampaignTableHead"></tr></thead>
           <tbody id="googleAdsCampaignTableBody"></tbody>
+          <tfoot><tr id="googleAdsCampaignTableFoot"></tr></tfoot>
         </table>
       </div>
       <div class="table-pagination" id="googleAdsCampaignTablePagination"></div>
@@ -2273,10 +2298,35 @@ function renderObjGroups(){
       body.appendChild(row);
     });
 
+    // Fila de resumen — suma de todas las campañas de este objetivo, mismas
+    // columnas que las filas individuales para poder comparar directo.
+    const totalRow = document.createElement('div');
+    totalRow.className = 'camp-row total';
+    totalRow.innerHTML = `
+      <div class="camp-name">TOTAL</div>
+      <div>${fmtVal(t.cost,'money')}</div>
+      <div>${fmtVal(t.reach,'int')}</div>
+      <div>${fmtVal(t.clicks,'int')}</div>
+      <div>${fmtVal(t.atc,'int')}</div>
+      <div>${fmtVal(t.checkouts,'int')}</div>
+      <div>${t.roas!==null ? t.roas.toFixed(1)+'x' : '—'}</div>`;
+    body.appendChild(totalRow);
+
     group.appendChild(head);
     group.appendChild(body);
     container.appendChild(group);
   });
+}
+
+function renderMetaFunnel(){
+  const rows = getTrafficCampaignsFiltered();
+  const t = trafficTotals(rows);
+  renderGenericFunnel('metaFunnelBox', [
+    {label:'Visitas a la Página', val:t.lpv, color:'#8A9BA8'},
+    {label:'Agregaron al Carrito', val:t.atc, color:'#B67C4D'},
+    {label:'Iniciaron Checkout', val:t.checkouts, color:'#6FA967'},
+    {label:'Compraron', val:t.purchases, color:'#3E4831'},
+  ]);
 }
 
 function renderMetaAdsAll(){
@@ -2285,6 +2335,7 @@ function renderMetaAdsAll(){
   safe(renderTrafficStackChart, 'trafficStackChart');
   safe(renderAdsTrafficChart, 'adsTrafficChart');
   safe(renderAdsAtcChart, 'adsAtcChart');
+  safe(renderMetaFunnel, 'metaFunnelBox');
   safe(renderObjGroups, 'objGroups');
 }
 
@@ -3476,9 +3527,29 @@ function renderLocationChart(){
 
 /* ---------- PAGINACIÓN REUTILIZABLE PARA TABLAS LARGAS ---------- */
 const TABLE_PAGE_SIZE = 10;
-// Pinta los controles de paginación en containerId y regresa la página ya
-// acotada al rango válido (por si la data cambió de tamaño desde la última
-// vez, ej. al cambiar de periodo o de orden).
+/* ---------- FUNNEL GENÉRICO REUTILIZABLE (estilo dual: % del total y % del paso anterior) ---------- */
+function renderGenericFunnel(containerId, steps){
+  const box = document.getElementById(containerId);
+  if(!box) return;
+  const base = steps[0] ? steps[0].val : 0;
+  const max = Math.max(1, ...steps.map(s=>s.val));
+  box.innerHTML = '';
+  steps.forEach((s,i)=>{
+    const pctDelTotal = base>0 ? (s.val/base*100) : 0;
+    const prevVal = i>0 ? steps[i-1].val : null;
+    const pctDelPaso = (i>0 && prevVal) ? (s.val/prevVal*100) : null;
+    const width = Math.max(4, (s.val/max*100));
+    const row = document.createElement('div');
+    row.className = 'funnel-row';
+    row.innerHTML = `
+      <div class="funnel-label">${s.label}</div>
+      <div class="funnel-bar-bg"><div class="funnel-bar" style="width:${width}%; background:${s.color};"></div><span class="funnel-bar-value">${fmtVal(s.val,'int')}</span></div>
+      <div class="funnel-pct">${pctDelTotal.toFixed(2)}%${pctDelPaso!==null ? ` <span style="opacity:.6; font-size:11px;">(${pctDelPaso.toFixed(1)}% del paso anterior)</span>` : ''}</div>`;
+    box.appendChild(row);
+  });
+}
+
+
 function renderTablePagination(containerId, totalRows, currentPage, onPageChange, noun){
   const totalPages = Math.max(1, Math.ceil(totalRows / TABLE_PAGE_SIZE));
   const page = Math.min(currentPage, totalPages - 1);
@@ -3733,9 +3804,54 @@ function renderGoogleAdsCampaignTable(){
     }).join('');
     body.appendChild(tr);
   });
+
+  // Fila de resumen — suma de TODAS las campañas (no solo la página visible),
+  // vive en el tfoot para que no se pierda al pasar de página.
+  const foot = document.getElementById('googleAdsCampaignTableFoot');
+  if(foot){
+    const totals = {
+      cost: sorted.reduce((a,r)=>a+(r.cost||0),0),
+      clicks: sorted.reduce((a,r)=>a+(r.clicks||0),0),
+      impressions: sorted.reduce((a,r)=>a+(r.impressions||0),0),
+      conversions: sorted.reduce((a,r)=>a+(r.conversions||0),0),
+      conversions_value: sorted.reduce((a,r)=>a+(r.conversions_value||0),0),
+    };
+    totals.ctr = totals.impressions ? totals.clicks/totals.impressions*100 : 0;
+    totals.roas = totals.cost ? totals.conversions_value/totals.cost : null;
+    foot.innerHTML = GOOGLE_ADS_CAMPAIGN_COLS.map(c=>{
+      if(c.key==='campaign_name') return `<td>TOTAL</td>`;
+      if(c.key==='channel_type') return `<td>—</td>`;
+      return `<td>${fmtGoogleAds(totals[c.key], c.fmt)}</td>`;
+    }).join('');
+  }
 }
 
-let GOOGLE_ADS_GEO_ROWS = [], GOOGLE_ADS_SEARCH_TERMS_ROWS = [], GOOGLE_ADS_KEYWORDS_ROWS = [], GOOGLE_ADS_ADS_ROWS = [];
+let GOOGLE_ADS_GEO_ROWS = [], GOOGLE_ADS_SEARCH_TERMS_ROWS = [], GOOGLE_ADS_KEYWORDS_ROWS = [], GOOGLE_ADS_ADS_ROWS = [], GOOGLE_ADS_FUNNEL_ROWS = [];
+
+function renderGoogleAdsFunnel(){
+  // Agregamos por acción de conversión, ignorando el desglose por objetivo
+  // (Prospección/Retargeting) — este es el funnel general de la cuenta.
+  // Solo usamos "Google Shopping App Purchase" para el paso de Compras — NO
+  // sumamos "amani (web) purchase" porque es la MISMA compra vista por otra
+  // fuente (GA4 vs integración nativa de Shopify), confirmado con el
+  // cliente. Tampoco usamos "View Item" — su valor en $ sale con cifras
+  // absurdas (millones de pesos) por una regla de valor mal configurada en
+  // la cuenta de Google Ads, así que la excluimos hasta que se corrija ahí.
+  const totals = { pageView: 0, atc: 0, checkout: 0, purchase: 0 };
+  GOOGLE_ADS_FUNNEL_ROWS.forEach(r=>{
+    const n = r.conversion_action_name || '';
+    if(n === 'Google Shopping App Page View') totals.pageView += r.all_conversions;
+    else if(n === 'Google Shopping App Add To Cart') totals.atc += r.all_conversions;
+    else if(n === 'Google Shopping App Begin Checkout') totals.checkout += r.all_conversions;
+    else if(n === 'Google Shopping App Purchase') totals.purchase += r.all_conversions;
+  });
+  renderGenericFunnel('googleAdsFunnelBox', [
+    {label:'Visitas a la Página', val:totals.pageView, color:'#8A9BA8'},
+    {label:'Agregaron al Carrito', val:totals.atc, color:'#B67C4D'},
+    {label:'Iniciaron Checkout', val:totals.checkout, color:'#6FA967'},
+    {label:'Compraron', val:totals.purchase, color:'#3E4831'},
+  ]);
+}
 let googleAdsChannelChartInst, googleAdsDeviceChartInst;
 const GOOGLE_ADS_DEVICE_LABELS = { MOBILE:'Mobile', DESKTOP:'Desktop', TABLET:'Tablet', CONNECTED_TV:'Connected TV', OTHER:'Otro', UNSPECIFIED:'Sin especificar', UNKNOWN:'Desconocido' };
 
@@ -3745,18 +3861,20 @@ async function renderGoogleAdsAll(){
   try{
     const range = googleAdsRange;
     const since = range && range.since, until = range && range.until;
-    const [campaignRows, geoRows, searchTermsRows, keywordsRows, adsRows] = await Promise.all([
+    const [campaignRows, geoRows, searchTermsRows, keywordsRows, adsRows, funnelRows] = await Promise.all([
       fetchGoogleAds(since, until, 'campaign'),
       fetchGoogleAds(since, until, 'geo'),
       fetchGoogleAds(since, until, 'search_terms'),
       fetchGoogleAds(since, until, 'keywords'),
       fetchGoogleAds(since, until, 'ads'),
+      fetchGoogleAds(since, until, 'funnel'),
     ]);
     GOOGLE_ADS_ROWS = campaignRows;
     GOOGLE_ADS_GEO_ROWS = geoRows;
     GOOGLE_ADS_SEARCH_TERMS_ROWS = searchTermsRows;
     GOOGLE_ADS_KEYWORDS_ROWS = keywordsRows;
     GOOGLE_ADS_ADS_ROWS = adsRows;
+    GOOGLE_ADS_FUNNEL_ROWS = funnelRows;
     const now = new Date();
     const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
     const rango = (range && range.since) ? range.label : 'Todo el histórico';
@@ -3764,10 +3882,11 @@ async function renderGoogleAdsAll(){
   } catch(err){
     console.error('Google Ads live fetch failed:', err);
     setGoogleAdsSyncUI('err', `Google Ads — sin conexión al endpoint en vivo (${err.message})`);
-    GOOGLE_ADS_ROWS = []; GOOGLE_ADS_GEO_ROWS = []; GOOGLE_ADS_SEARCH_TERMS_ROWS = []; GOOGLE_ADS_KEYWORDS_ROWS = []; GOOGLE_ADS_ADS_ROWS = [];
+    GOOGLE_ADS_ROWS = []; GOOGLE_ADS_GEO_ROWS = []; GOOGLE_ADS_SEARCH_TERMS_ROWS = []; GOOGLE_ADS_KEYWORDS_ROWS = []; GOOGLE_ADS_ADS_ROWS = []; GOOGLE_ADS_FUNNEL_ROWS = [];
   }
   safe(renderKPIsGoogleAds, 'kpisGoogleAds');
   safe(renderGoogleAdsMonthlyChart, 'googleAdsMonthlyChart');
+  safe(renderGoogleAdsFunnel, 'googleAdsFunnelBox');
   safe(renderGoogleAdsCampaignTable, 'googleAdsCampaignTable');
   safe(renderGoogleAdsChannelChart, 'googleAdsChannelChart');
   safe(renderGoogleAdsDeviceChart, 'googleAdsDeviceChart');
