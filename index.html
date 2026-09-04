@@ -3097,6 +3097,25 @@ function fmtAud(v, fmt){
   return Number(v).toLocaleString('en-US',{maximumFractionDigits:0});
 }
 
+// Genera las etiquetas de leyenda de una gráfica de dona incluyendo el %
+// que representa cada rebanada del total — para que el % atribuible se vea
+// directo en la gráfica, no solo al pasar el mouse.
+function legendLabelsWithPct(chart){
+  const data = chart.data.datasets[0].data;
+  const bg = chart.data.datasets[0].backgroundColor;
+  const total = data.reduce((a,v)=>a+(Number(v)||0),0);
+  return chart.data.labels.map((label, i)=>{
+    const pct = total>0 ? (data[i]/total*100).toFixed(0) : 0;
+    return {
+      text: `${label} — ${pct}%`,
+      fillStyle: Array.isArray(bg) ? bg[i] : bg,
+      strokeStyle: Array.isArray(bg) ? bg[i] : bg,
+      hidden: false,
+      index: i,
+    };
+  });
+}
+
 function renderKPIsAudiencias(){
   const grid = document.getElementById('kpiGridAudiencias');
   grid.innerHTML = '';
@@ -3127,9 +3146,11 @@ function renderAgeChart(){
   const d = AUDIENCIAS_DATA.age;
   const ctx = document.getElementById('ageChart').getContext('2d');
   if(ageChartInst) ageChartInst.destroy();
+  const total = d.reduce((a,x)=>a+x.spend,0);
+  const pctOf = (v)=> total>0 ? (v/total*100).toFixed(0) : 0;
   ageChartInst = new Chart(ctx, {
     data:{
-      labels: d.map(x=>x.age),
+      labels: d.map(x=>`${x.age} (${pctOf(x.spend)}%)`),
       datasets:[
         {type:'bar', label:'Inversión', data:d.map(x=>x.spend), backgroundColor:'#B67C4D', borderRadius:6, yAxisID:'y', order:2},
         {type:'line', label:'ROAS', data:d.map(x=>x.roas), borderColor:'#3E4831', borderWidth:2, pointRadius:4, yAxisID:'y1', spanGaps:true, order:1},
@@ -3139,7 +3160,7 @@ function renderAgeChart(){
       responsive:true, maintainAspectRatio:false,
       plugins:{
         legend:{ position:'bottom', labels:{ font:{family:'Inter', size:11}, color:'#3E4831', usePointStyle:true, boxWidth:8 } },
-        tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=> c.dataset.yAxisID==='y1' ? 'ROAS: '+(c.raw!==null?c.raw.toFixed(2)+'x':'—') : 'Inversión: '+fmtAud(c.raw,'money') } }
+        tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=> c.dataset.yAxisID==='y1' ? 'ROAS: '+(c.raw!==null?c.raw.toFixed(2)+'x':'—') : `Inversión: ${fmtAud(c.raw,'money')} (${pctOf(c.raw)}% del total)` } }
       },
       scales:{
         x:{ grid:{display:false}, ticks:{ font:{family:'Inter', size:11, weight:600}, color:'#566471' } },
@@ -3154,14 +3175,15 @@ function renderGenderChart(){
   const d = AUDIENCIAS_DATA.gender;
   const ctx = document.getElementById('genderChart').getContext('2d');
   if(genderChartInst) genderChartInst.destroy();
+  const total = d.reduce((a,x)=>a+x.spend,0);
   genderChartInst = new Chart(ctx, {
     type:'doughnut',
     data:{ labels:d.map(x=>x.gender), datasets:[{ data:d.map(x=>x.spend), backgroundColor:['#B67C4D','#566471','#6FA967'] }] },
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{
-        legend:{ position:'bottom', labels:{ font:{family:'Inter', size:11}, color:'#3E4831', usePointStyle:true, boxWidth:8 } },
-        tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=> c.label+': '+fmtAud(c.raw,'money') } }
+        legend:{ position:'bottom', labels:{ font:{family:'Inter', size:11}, color:'#3E4831', usePointStyle:true, boxWidth:8, generateLabels: legendLabelsWithPct } },
+        tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=> `${c.label}: ${fmtAud(c.raw,'money')} (${total>0?(c.raw/total*100).toFixed(1):0}% del total)` } }
       }
     }
   });
@@ -3191,14 +3213,15 @@ function renderDeviceChart(){
   const d = AUDIENCIAS_DATA.device;
   const ctx = document.getElementById('deviceChart').getContext('2d');
   if(deviceChartInst) deviceChartInst.destroy();
+  const total = d.reduce((a,x)=>a+x.spend,0);
   deviceChartInst = new Chart(ctx, {
     type:'doughnut',
     data:{ labels:d.map(x=>x.device), datasets:[{ data:d.map(x=>x.spend), backgroundColor:['#566471','#B67C4D','#6FA967'] }] },
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{
-        legend:{ position:'bottom', labels:{ font:{family:'Inter', size:11}, color:'#3E4831', usePointStyle:true, boxWidth:8 } },
-        tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=> c.label+': '+fmtAud(c.raw,'money') } }
+        legend:{ position:'bottom', labels:{ font:{family:'Inter', size:11}, color:'#3E4831', usePointStyle:true, boxWidth:8, generateLabels: legendLabelsWithPct } },
+        tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=> `${c.label}: ${fmtAud(c.raw,'money')} (${total>0?(c.raw/total*100).toFixed(1):0}% del total)` } }
       }
     }
   });
@@ -3208,14 +3231,15 @@ function renderPlatformChart(){
   const d = AUDIENCIAS_DATA.platform;
   const ctx = document.getElementById('platformChart').getContext('2d');
   if(platformChartInst) platformChartInst.destroy();
+  const total = d.reduce((a,x)=>a+x.spend,0);
   platformChartInst = new Chart(ctx, {
     type:'doughnut',
     data:{ labels:d.map(x=>x.platform), datasets:[{ data:d.map(x=>x.spend), backgroundColor:['#3E4831','#B67C4D'] }] },
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{
-        legend:{ position:'bottom', labels:{ font:{family:'Inter', size:11}, color:'#3E4831', usePointStyle:true, boxWidth:8 } },
-        tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=> c.label+': '+fmtAud(c.raw,'money') } }
+        legend:{ position:'bottom', labels:{ font:{family:'Inter', size:11}, color:'#3E4831', usePointStyle:true, boxWidth:8, generateLabels: legendLabelsWithPct } },
+        tooltip:{ backgroundColor:'#3E4831', callbacks:{ label:(c)=> `${c.label}: ${fmtAud(c.raw,'money')} (${total>0?(c.raw/total*100).toFixed(1):0}% del total)` } }
       }
     }
   });
